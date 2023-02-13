@@ -72,14 +72,6 @@ namespace CharacterAI.Models
             return replies;
         }
     }
-
-    internal class Reply
-    {
-        public string? Id { get; set; }
-        public string? Text { get; set; }
-        public string? ImageRelPath { get; set; }
-        public bool HasImage { get; set; }
-    }
 }
 
 // {
