@@ -6,27 +6,31 @@ namespace CharacterAI.Models
 {
     public class SearchResult : CommonService
     {
-        public List<Character>? Characters { get; }
-        public string? ErrorReason { get; }
-        public bool IsSuccessful { get; }
-        public bool IsEmpty { get; }
+        public List<Character>? Characters { get => characters; }
+        public string? ErrorReason { get => errorReason; }
+        public bool IsSuccessful { get => isSuccessful; }
+        public bool IsEmpty { get => isEmpty; }
+
+        private List<Character>? characters = null;
+        private string? errorReason = null;
+        private bool isEmpty = true;
+        private bool isSuccessful = true;
 
         public SearchResult(HttpResponseMessage httpResponse)
         {
             dynamic response = GetSearchResponse(httpResponse);
-            IsSuccessful = true;
-            IsEmpty = true;
 
             if (response is null) return;
             if (response is string)
             {
-                ErrorReason = response;
-                IsSuccessful = false;
+                isSuccessful = false;
+                errorReason = response;
 
                 return;
             }
 
-            Characters = response;
+            isEmpty = false;
+            characters = response;
         }
 
         private static async Task<dynamic?> GetSearchResponse(HttpResponseMessage httpResponse)
@@ -42,10 +46,10 @@ namespace CharacterAI.Models
 
             if (!jCharacters.HasValues) return null;
 
-            var characters = new List<Character>();
+            var charactersList = new List<Character>();
             foreach (var character in jCharacters.ToObject<List<dynamic>>()!)
             {
-                characters.Add(new Character
+                charactersList.Add(new Character
                 {
                     Id = character.external_id,
                     Title = character.title,
@@ -61,7 +65,7 @@ namespace CharacterAI.Models
                 });
             }
 
-            return characters;
+            return charactersList;
         }
     }
 }
