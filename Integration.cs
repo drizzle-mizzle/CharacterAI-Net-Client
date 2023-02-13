@@ -6,14 +6,14 @@ using System.Text;
 
 namespace CharacterAI
 {
-    public class Intergration : CommonService
+    public class Integration : CommonService
     {
         private readonly HttpClient _httpClient = new();
         private readonly string? _userToken;
 
         // basically, just a result of GetInfo()
         public Character charInfo = new();
-        public Intergration(string userToken)
+        public Integration(string userToken)
             => _userToken = userToken;
 
         // Use it to quickly setup integration with a character and get-last/create-new chat with it.
