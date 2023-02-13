@@ -30,7 +30,7 @@ namespace CharacterAI
         }
 
         // Send message and get reply
-        public async Task<dynamic> CallCharacter(string msg = "", string imgPath = "", string? primaryMsgId = null, string? parentMsgId = null)
+        public async Task<CharacterResponse> CallCharacter(string msg = "", string imgPath = "", string? primaryMsgId = null, string? parentMsgId = null)
         {
             var contentDynamic = BasicCallContent(charInfo, msg, imgPath);
 
@@ -60,13 +60,6 @@ namespace CharacterAI
 
             // Send request
             using var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                string eMsg = "⚠️ Failed to send message!";
-                Failure(eMsg, response: response);
-
-                return eMsg;
-            }
 
             return new CharacterResponse(response);
         }

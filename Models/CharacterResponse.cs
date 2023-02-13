@@ -3,7 +3,7 @@ using CharacterAI.Services;
 
 namespace CharacterAI.Models
 {
-    internal class CharacterResponse : CommonService
+    public class CharacterResponse : CommonService
     {
         public List<Reply>? Replies { get; }
         public string? LastUserMsgId { get; }
@@ -29,6 +29,14 @@ namespace CharacterAI.Models
 
         private static async Task<dynamic> GetCharacterResponse(HttpResponseMessage response)
         {
+            if (!response.IsSuccessStatusCode)
+            {
+                string eMsg = "⚠️ Failed to send message!";
+                Failure(eMsg, response: response);
+
+                return eMsg;
+            }
+
             try
             {
                 string[] chunks = (await response.Content.ReadAsStringAsync()).Split("\n");
