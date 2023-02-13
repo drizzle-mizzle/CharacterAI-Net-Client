@@ -11,8 +11,8 @@ namespace CharacterAI
         private readonly HttpClient _httpClient = new();
         private readonly string? _userToken;
 
-        // basically, just a result of GetInfo()
-        public Character charInfo = new();
+        public Character charInfo = new(); // basically, just a result of GetInfo()
+
         public Integration(string userToken)
             => _userToken = userToken;
 
@@ -21,16 +21,14 @@ namespace CharacterAI
         public async Task<bool> Setup(string charID = "", bool reset = false)
         {
             if (reset)
-                return await CreateNewDialog();
-            else
-            {
-                charInfo.Id = charID;
-                return await GetInfo() && await GetHistory();
-            }
+                return await CreateNewDialogAsync();
+
+            charInfo.Id = charID;
+            return await GetInfoAsync() && await GetLastHistoryAsync();
         }
 
         // Send message and get reply
-        public async Task<CharacterResponse> CallCharacter(string msg = "", string imgPath = "", string? primaryMsgId = null, string? parentMsgId = null)
+        public async Task<CharacterResponse> CallCharacterAsync(string msg = "", string imgPath = "", string? primaryMsgId = null, string? parentMsgId = null)
         {
             var contentDynamic = BasicCallContent(charInfo, msg, imgPath);
 
@@ -67,7 +65,7 @@ namespace CharacterAI
         // Get info about character
         // returns true if successful
         // returns false if fails
-        private async Task<bool> GetInfo()
+        private async Task<bool> GetInfoAsync()
         {
             string url = "https://beta.character.ai/chat/character/info/";
 
@@ -99,7 +97,7 @@ namespace CharacterAI
         // Fetch last chat histoty or create one
         // returns true if successful
         // returns false if fails
-        private async Task<bool> GetHistory()
+        private async Task<bool> GetLastHistoryAsync()
         {
             HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/history/continue/");
             request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
@@ -114,7 +112,7 @@ namespace CharacterAI
             var content = await response.Content.ReadAsStringAsync();
             var externalId = JsonConvert.DeserializeObject<dynamic>(content)?.external_id;
             if (externalId is null)
-                return await CreateNewDialog();
+                return await CreateNewDialogAsync();
 
             charInfo.HistoryExternalId = externalId;
 
@@ -124,7 +122,7 @@ namespace CharacterAI
         // Create new chat
         // returns true if successful
         // returns false if fails
-        private async Task<bool> CreateNewDialog()
+        private async Task<bool> CreateNewDialogAsync()
         {
             HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/history/create/");
             request.Content = new FormUrlEncodedContent(new Dictionary<string, string> { 
@@ -150,7 +148,7 @@ namespace CharacterAI
         // Upload image on a server. Use it to attach image to your reply.
         // returns image path if successful
         // returns null if fails
-        public async Task<string?> UploadImage(byte[] img)
+        public async Task<string?> UploadImageAsync(byte[] img)
         {
             var image = new ByteArrayContent(img);
             image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/jpeg");
@@ -172,7 +170,7 @@ namespace CharacterAI
         }
 
         // Search for a character
-        public async Task<SearchResult> Search(string query)
+        public async Task<SearchResult> SearchAsync(string query)
         {
             string url = $"https://beta.character.ai/chat/characters/search/?query={query}";
             var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -185,6 +183,7 @@ namespace CharacterAI
 
         private HttpRequestMessage SetHeadersForRequest(HttpRequestMessage request)
         {
+            // just a copypaste from my own browser
             var headers = new string[]
             {
                 "Accept", "application/json, text/plain, */*",
