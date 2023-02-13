@@ -8,13 +8,11 @@ namespace CharacterAI.Models
     {
         public List<Character>? Characters { get => characters; }
         public string? ErrorReason { get => errorReason; }
-        public bool IsSuccessful { get => isSuccessful; }
-        public bool IsEmpty { get => isEmpty; }
+        public bool IsSuccessful { get => errorReason is null; }
+        public bool IsEmpty { get => characters is not null; }
 
-        private List<Character>? characters = null;
-        private string? errorReason = null;
-        private bool isEmpty = true;
-        private bool isSuccessful = true;
+        private readonly List<Character>? characters = null;
+        private readonly string? errorReason = null;
 
         public SearchResult(HttpResponseMessage httpResponse)
         {
@@ -23,13 +21,11 @@ namespace CharacterAI.Models
             if (response is null) return;
             if (response is string)
             {
-                isSuccessful = false;
                 errorReason = response;
 
                 return;
             }
 
-            isEmpty = false;
             characters = response;
         }
 

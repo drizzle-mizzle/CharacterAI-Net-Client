@@ -5,25 +5,25 @@ namespace CharacterAI.Models
 {
     public class CharacterResponse : CommonService
     {
-        public List<Reply>? Replies { get; }
-        public string? LastUserMsgId { get; }
-        public string? ErrorReason { get; }
-        public bool IsSuccessful { get; }
+        public List<Reply>? Replies { get => replies; }
+        public string? LastUserMsgId { get => lastUserMsgId; }
+        public string? ErrorReason { get => errorReason; }
+        public bool IsSuccessful { get => errorReason is null; }
+
+        private readonly List<Reply>? replies = null;
+        private readonly string? lastUserMsgId = null;
+        private readonly string? errorReason = null;
 
         public CharacterResponse(HttpResponseMessage httpResponse)
         {
             dynamic response = GetCharacterResponse(httpResponse);
 
             if (response is string)
-            {
-                ErrorReason = response;
-                IsSuccessful = false;
-            }
+                errorReason = response;
             else
             {
-                Replies = GetCharacterReplies(response);
-                LastUserMsgId = response.last_user_msg_id;
-                IsSuccessful = true;
+                replies = GetCharacterReplies(response);
+                lastUserMsgId = response.last_user_msg_id;
             }
         }
 
