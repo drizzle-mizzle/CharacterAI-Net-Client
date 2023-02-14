@@ -5,6 +5,15 @@ namespace CharacterAI.Services
 {
     public partial class CommonService
     {
+
+        // Log and return true
+        internal static bool Success(string logText = "")
+        {
+            Log(logText + "\n", ConsoleColor.Green);
+
+            return true;
+        }
+
         // Log and return false
         internal static bool Failure(string logText = "", HttpResponseMessage? response = null)
         {
@@ -28,14 +37,15 @@ namespace CharacterAI.Services
 
             return false;
         }
-        private static void Log(string text, ConsoleColor color = ConsoleColor.Gray)
+
+        internal static void Log(string text, ConsoleColor color = ConsoleColor.Gray)
         {
             Console.ForegroundColor = color;
             Console.Write(text);
             Console.ResetColor();
         }
 
-        internal static dynamic BasicCallContent(Character charInfo, string msg, string imgPath)
+        internal static dynamic BasicCallContent(Character charInfo, string msg, string imgPath, string historyId)
         {
             dynamic content = new ExpandoObject();
 
@@ -48,7 +58,7 @@ namespace CharacterAI.Services
 
             content.character_external_id = charInfo.Id!;
             content.enable_tti = true;
-            content.history_external_id = charInfo.HistoryExternalId!;
+            content.history_external_id = historyId;
             content.text = msg;
             content.tgt = charInfo.Tgt!;
             content.ranking_method = "random";

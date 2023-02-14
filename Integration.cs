@@ -1,6 +1,7 @@
 ﻿using CharacterAI.Models;
 using CharacterAI.Services;
 using Newtonsoft.Json;
+using System;
 using System.Net.Http.Headers;
 using System.Text;
 
@@ -8,29 +9,59 @@ namespace CharacterAI
 {
     public class Integration : CommonService
     {
+        public Character CurrentCharacter { get => _currentCharacter; }
+        public List<string> Chats { get => _chatsList; }
+
+        private Character _currentCharacter = new();
+        private readonly List<string> _chatsList = new();
         private readonly HttpClient _httpClient = new();
         private readonly string? _userToken;
-
-        public Character charInfo = new(); // basically, just a result of GetInfo()
 
         public Integration(string userToken)
             => _userToken = userToken;
 
         // Use it to quickly setup integration with a character and get-last/create-new chat with it.
-        // Provide 'reset' to simply create a new chat.
-        public async Task<bool> Setup(string charID = "", bool reset = false)
+        public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
         {
-            if (reset)
-                return await CreateNewDialogAsync();
+            Log($"Starting character setup... (Character ID: {characterId ?? _currentCharacter.Id})\n");
 
-            charInfo.Id = charID;
-            return await GetInfoAsync() && await GetLastHistoryAsync();
+            Log("Fetching character info... ");
+            var character = await GetInfoAsync(characterId);
+            if (character.IsEmpty)
+                return new SetupResult(false, "Failed to get character info.");
+
+            Success($"OK\n  (Character name: {character.Name})");
+            _currentCharacter = character;
+            _chatsList.Clear();
+
+            Log("Fetching dialog history... ");
+            var historyId = startWithNewChat ? await CreateNewChatAsync() : await GetLastChatAsync();
+            if (historyId is null)
+                return new SetupResult(false, "Failed to get chat history.");
+
+            Success($"OK\n  (History ID: {historyId})");
+            _chatsList.Add(historyId);
+
+            return new SetupResult(true);
+        }
+
+        // Forget all chats with a character and create new one
+        public async Task<SetupResult> Reset()
+        {
+            _chatsList.Clear();
+            var historyId = await CreateNewChatAsync();
+            if (historyId is null)
+                return new SetupResult(false, "Failed to create new chat.");
+
+            _chatsList.Add(historyId);
+
+            return new SetupResult(true);
         }
 
         // Send message and get reply
-        public async Task<CharacterResponse> CallCharacterAsync(string msg = "", string imgPath = "", string? primaryMsgId = null, string? parentMsgId = null)
+        public async Task<CharacterResponse> CallCharacterAsync(string msg = "", string imgPath = "", string? historyId = null, string? primaryMsgId = null, string? parentMsgId = null)
         {
-            var contentDynamic = BasicCallContent(charInfo, msg, imgPath);
+            var contentDynamic = BasicCallContent(_currentCharacter, msg, imgPath, historyId ?? _chatsList.Last());
 
             // Fetch new answer (aka "perform swipe").
             if (parentMsgId is not null)
@@ -57,92 +88,115 @@ namespace CharacterAI
             request = SetHeadersForRequest(request);
 
             // Send request
-            using var response = await _httpClient.SendAsync(request);
+            var response = await _httpClient.SendAsync(request);
 
             return new CharacterResponse(response);
         }
 
         // Get info about character
-        // returns true if successful
-        // returns false if fails
-        private async Task<bool> GetInfoAsync()
+        public async Task<Character> GetInfoAsync(string? characterId = null)
         {
             string url = "https://beta.character.ai/chat/character/info/";
 
             HttpRequestMessage request = new(HttpMethod.Post, url);
             request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
-                { "external_id", charInfo.Id! }
+                { "external_id", characterId ?? _currentCharacter.Id! }
             });
             request = SetHeadersForRequest(request);
 
-            using var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-                return Failure(response: response);
-
+            var response = await _httpClient.SendAsync(request);
             var content = await response.Content.ReadAsStringAsync();
-            var charParsed = JsonConvert.DeserializeObject<dynamic>(content)?.character;
-            if (charParsed is null)
-                return Failure("Something went wrong...", response: response);
+            dynamic? character = null;
 
-            charInfo.Name = charParsed.name;
-            charInfo.Greeting = charParsed.greeting;
-            charInfo.Description = charParsed.description;
-            charInfo.Title = charParsed.title;
-            charInfo.Tgt = charParsed.participant__user__username;
-            charInfo.AvatarUrl = $"https://characterai.io/i/400/static/avatars/{charParsed.avatar_file_name}";
+            if (response.IsSuccessStatusCode)
+                character = JsonConvert.DeserializeObject<dynamic>(content)?.character;
+            else
+                Failure(response: response);
 
-            return true;
+            return new Character(character);
         }
 
         // Fetch last chat histoty or create one
-        // returns true if successful
-        // returns false if fails
-        private async Task<bool> GetLastHistoryAsync()
+        // returns chat history id if successful
+        // returns null if fails
+        public async Task<string?> GetLastChatAsync(string? characterId = null)
         {
             HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/history/continue/");
             request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
-                { "character_external_id", charInfo.Id! }
+                { "character_external_id", characterId ?? _currentCharacter.Id! }
             });
             request = SetHeadersForRequest(request);
 
             using var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
-                return Failure(response: response);
+            {
+                Failure(response: response);
+                return null;
+            }
 
             var content = await response.Content.ReadAsStringAsync();
             var externalId = JsonConvert.DeserializeObject<dynamic>(content)?.external_id;
+
             if (externalId is null)
-                return await CreateNewDialogAsync();
+                return await CreateNewChatAsync(characterId);
 
-            charInfo.HistoryExternalId = externalId;
-
-            return true;
+            return externalId;
         }
 
-        // Create new chat
-        // returns true if successful
-        // returns false if fails
-        private async Task<bool> CreateNewDialogAsync()
+        // Create new chat with a character
+        // returns chat history id if successful
+        // returns null if fails
+        public async Task<string?> CreateNewChatAsync(string? characterId = null)
         {
             HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/history/create/");
-            request.Content = new FormUrlEncodedContent(new Dictionary<string, string> { 
-                { "character_external_id", charInfo.Id! },
+            request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
+                { "character_external_id", characterId ?? _currentCharacter.Id! },
                 { "override_history_set", null! }
             });
             request = SetHeadersForRequest(request);
 
             using var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
-                return Failure(response: response);
+            {
+                Failure(response: response);
+                return null;
+            }
 
             var content = await response.Content.ReadAsStringAsync();
             var externalId = JsonConvert.DeserializeObject<dynamic>(content)?.external_id;
             if (externalId is null)
-                return Failure("Something went wrong...", response: response);
+                Failure("Something went wrong...", response: response);;
 
-            charInfo.HistoryExternalId = externalId;
+            return externalId;
+        }
 
-            return true;
+        // not working
+        public async Task<HistoriesResponse> GetHistoriesAsync(string? characterId = null)
+        {
+            HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/character/histories/");
+            request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
+                { "external_id", characterId ?? _currentCharacter.Id! },
+                { "number", "50" } // Idk what it is. Probably an amount of chats to show. Default value is 50, so I'll just leave it like this.
+            });
+            request.Headers.Add("accept-encoding", "gzip");
+            request = SetHeadersForRequest(request);
+            
+
+            var response = await _httpClient.SendAsync(request);
+
+            return new HistoriesResponse(response);
+        }
+
+        // Search for a character
+        public async Task<SearchResponse> SearchAsync(string query)
+        {
+            string url = $"https://beta.character.ai/chat/characters/search/?query={query}";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request = SetHeadersForRequest(request);
+
+            using var response = await _httpClient.SendAsync(request);
+
+            return new SearchResponse(response);
         }
 
         // Upload image on a server. Use it to attach image to your reply.
@@ -154,7 +208,7 @@ namespace CharacterAI
             image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/jpeg");
 
             var request = new HttpRequestMessage(HttpMethod.Post, "https://beta.character.ai/chat/upload-image/");
-            request.Content = new MultipartFormDataContent { { image, "\"image\"", $"\"image.jpg\"" } };        
+            request.Content = new MultipartFormDataContent { { image, "\"image\"", $"\"image.jpg\"" } };
             request = SetHeadersForRequest(request);
 
             using var response = await _httpClient.SendAsync(request);
@@ -169,18 +223,6 @@ namespace CharacterAI
             return JsonConvert.DeserializeObject<dynamic>(content)?.value;
         }
 
-        // Search for a character
-        public async Task<SearchResult> SearchAsync(string query)
-        {
-            string url = $"https://beta.character.ai/chat/characters/search/?query={query}";
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request = SetHeadersForRequest(request);
-
-            using var response = await _httpClient.SendAsync(request);
-
-            return new SearchResult(response);
-        }
-
         private HttpRequestMessage SetHeadersForRequest(HttpRequestMessage request)
         {
             // just a copypaste from my own browser
@@ -193,7 +235,7 @@ namespace CharacterAI
                 "ContentType", "application/json",
                 "dnt", "1",
                 "Origin", "https://beta.character.ai",
-                "Referer", $"https://beta.character.ai/" + (charInfo?.Id is null ? "search?" : $"chat?char={charInfo.Id}"),
+                "Referer", $"https://beta.character.ai/" + (_currentCharacter?.Id is null ? "search?" : $"chat?char={_currentCharacter.Id}"),
                 "sec-ch-ua", "\"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"108\", \"Google Chrome\";v=\"108\"",
                 "sec-ch-ua-mobile", "?0",
                 "sec-ch-ua-platform", "Windows",

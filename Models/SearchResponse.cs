@@ -4,32 +4,29 @@ using CharacterAI.Services;
 
 namespace CharacterAI.Models
 {
-    public class SearchResult : CommonService
+    public class SearchResponse : CommonService
     {
-        public List<Character>? Characters { get => characters; }
-        public string? ErrorReason { get => errorReason; }
-        public bool IsSuccessful { get => errorReason is null; }
-        public bool IsEmpty { get => characters is not null; }
+        public List<Character>? Characters { get; }
+        public string? ErrorReason { get; }
+        public bool IsSuccessful { get => ErrorReason is null; }
+        public bool IsEmpty { get => Characters is not null; }
 
-        private readonly List<Character>? characters = null;
-        private readonly string? errorReason = null;
-
-        public SearchResult(HttpResponseMessage httpResponse)
+        public SearchResponse(HttpResponseMessage httpResponse)
         {
-            dynamic response = GetSearchResponse(httpResponse);
+            dynamic? responseParsed = ParseSearchResponse(httpResponse).Result;
 
-            if (response is null) return;
-            if (response is string)
+            if (responseParsed is null) return;
+            if (responseParsed is string)
             {
-                errorReason = response;
+                ErrorReason = responseParsed;
 
                 return;
             }
 
-            characters = response;
+            Characters = responseParsed;
         }
 
-        private static async Task<dynamic?> GetSearchResponse(HttpResponseMessage httpResponse)
+        private static async Task<dynamic?> ParseSearchResponse(HttpResponseMessage httpResponse)
         {
             if (!httpResponse.IsSuccessStatusCode)
             {
@@ -44,22 +41,7 @@ namespace CharacterAI.Models
 
             var charactersList = new List<Character>();
             foreach (var character in jCharacters.ToObject<List<dynamic>>()!)
-            {
-                charactersList.Add(new Character
-                {
-                    Id = character.external_id,
-                    Title = character.title,
-                    Greeting = character.greeting,
-                    Description = character.description,
-                    AvatarUrl = $"https://characterai.io/i/400/static/avatars/{character.avatar_file_name}",
-                    IsPublic = character.visibility == "PUBLIC",
-                    Name = character.participant__name,
-                    Interactions = ulong.Parse(character.participant__num_interactions),
-                    Author = character.user__username,
-                    ImageGenEnabled = bool.Parse(character.img_gen_enabled),
-                    SearchScore = ulong.Parse(character.search_score)
-                });
-            }
+                charactersList.Add(new Character(character));
 
             return charactersList;
         }

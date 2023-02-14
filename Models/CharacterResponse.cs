@@ -1,45 +1,43 @@
 ﻿using Newtonsoft.Json;
 using CharacterAI.Services;
+using System.Runtime.Remoting;
+using Newtonsoft.Json.Linq;
 
 namespace CharacterAI.Models
 {
     public class CharacterResponse : CommonService
     {
-        public List<Reply>? Replies { get => replies; }
-        public string? LastUserMsgId { get => lastUserMsgId; }
-        public string? ErrorReason { get => errorReason; }
-        public bool IsSuccessful { get => errorReason is null; }
-
-        private readonly List<Reply>? replies = null;
-        private readonly string? lastUserMsgId = null;
-        private readonly string? errorReason = null;
+        public List<Reply>? Replies { get; }
+        public string? LastUserMsgId { get; }
+        public string? ErrorReason { get; }
+        public bool IsSuccessful { get => ErrorReason is null; }
 
         public CharacterResponse(HttpResponseMessage httpResponse)
         {
-            dynamic response = GetCharacterResponse(httpResponse);
+            dynamic responseParsed = ParseCharacterResponse(httpResponse).Result;
 
-            if (response is string)
-                errorReason = response;
+            if (responseParsed is string)
+                ErrorReason = responseParsed;
             else
             {
-                replies = GetCharacterReplies(response);
-                lastUserMsgId = response.last_user_msg_id;
+                Replies = GetCharacterReplies(responseParsed.replies);
+                LastUserMsgId = responseParsed.last_user_msg_id;
             }
         }
 
-        private static async Task<dynamic> GetCharacterResponse(HttpResponseMessage response)
+        private static async Task<dynamic> ParseCharacterResponse(HttpResponseMessage httpResponse)
         {
-            if (!response.IsSuccessStatusCode)
+            if (!httpResponse.IsSuccessStatusCode)
             {
                 string eMsg = "⚠️ Failed to send message!";
-                Failure(eMsg, response: response);
+                Failure(eMsg, response: httpResponse);
 
                 return eMsg;
             }
 
             try
             {
-                string[] chunks = (await response.Content.ReadAsStringAsync()).Split("\n");
+                string[] chunks = (await httpResponse.Content.ReadAsStringAsync()).Split("\n");
                 string finalChunk = chunks.First(c => JsonConvert.DeserializeObject<dynamic>(c)!.is_final_chunk == true);
 
                 return JsonConvert.DeserializeObject<dynamic>(finalChunk)!;
@@ -48,24 +46,23 @@ namespace CharacterAI.Models
             {
                 // gotta extend
                 string eMsg = "⚠️ Message has been sent successfully, but something went wrong... (probably, character reply was filtered and deleted, try again)";
-                Failure($"{eMsg}\n {e}");
+                Failure($"{eMsg}\n {e}", response: httpResponse);
 
                 return eMsg;
             }
         }
 
-        private static List<Reply> GetCharacterReplies(dynamic finalChunk)
+        private static List<Reply> GetCharacterReplies(JArray jReplies)
         {
             var replies = new List<Reply>();
 
-            foreach (dynamic dReply in finalChunk.replies)
+            foreach (dynamic reply in jReplies)
             {
                 replies.Add(new Reply
                 {
-                    Id = dReply.id,
-                    Text = dReply.text,
-                    ImageRelPath = dReply.image_rel_path,
-                    HasImage = string.IsNullOrEmpty(dReply.image_rel_path)
+                    Id = reply.id,
+                    Text = reply?.text,
+                    ImageRelPath = reply?.image_rel_path,
                 });
             }
 
