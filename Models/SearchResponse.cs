@@ -9,7 +9,7 @@ namespace CharacterAI.Models
         public List<Character>? Characters { get; }
         public string? ErrorReason { get; }
         public bool IsSuccessful { get => ErrorReason is null; }
-        public bool IsEmpty { get => Characters is not null; }
+        public bool IsEmpty { get => Characters is null; }
 
         public SearchResponse(HttpResponseMessage httpResponse)
         {
