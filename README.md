@@ -5,7 +5,7 @@
 ## 📓 Documentation
 - [Getting started](https://github.com/drizzle-mizzle/CharacterAI.Net/wiki/Getting-started)
 - [How to use](https://github.com/drizzle-mizzle/CharacterAI.Net/wiki/How-to-use)
-- [Requests](https://github.com/drizzle-mizzle/CharacterAI.Net/wiki/Requests)
+- [Requests description](https://github.com/drizzle-mizzle/CharacterAI.Net/wiki/Requests-description)
 
 ## Contributions are welcome!
 > I'm not that much of a *skilled developer*, and also do not always have time to react on emerging problems and service updates on schedule. Therefore, any contribution would be appreciated. *Also, feel free to fix any found grammar mistakes, as my English may be really bad sometimes.*
