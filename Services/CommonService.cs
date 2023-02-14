@@ -45,7 +45,7 @@ namespace CharacterAI.Services
             Console.ResetColor();
         }
 
-        internal static dynamic BasicCallContent(Character charInfo, string msg, string imgPath, string historyId)
+        internal static dynamic BasicCallContent(Character charInfo, string msg, string? imgPath, string historyId)
         {
             dynamic content = new ExpandoObject();
 
