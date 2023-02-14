@@ -59,9 +59,9 @@ namespace CharacterAI
         }
 
         // Send message and get reply
-        public async Task<CharacterResponse> CallCharacterAsync(string? message, string? imagePath, string? historyId, string? primaryMsgId, string? parentMsgId)
+        public async Task<CharacterResponse> CallCharacterAsync(string message = "", string? imagePath = null, string? historyId = null, string? primaryMsgId = null, string? parentMsgId = null)
         {
-            var contentDynamic = BasicCallContent(_currentCharacter, message ?? "", imagePath, historyId ?? _chatsList.Last());
+            var contentDynamic = BasicCallContent(_currentCharacter, message, imagePath, historyId ?? _chatsList.Last());
 
             // Fetch new answer (aka "perform swipe").
             if (parentMsgId is not null)
