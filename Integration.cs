@@ -1,7 +1,6 @@
 ﻿using CharacterAI.Models;
 using CharacterAI.Services;
 using Newtonsoft.Json;
-using System;
 using System.Net.Http.Headers;
 using System.Text;
 
