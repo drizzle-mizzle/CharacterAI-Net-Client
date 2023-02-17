@@ -6,7 +6,7 @@ namespace CharacterAI.Models
 {
     public class SearchResponse : CommonService
     {
-        public List<Character>? Characters { get; }
+        public List<Character> Characters { get; } = new();
         public string? ErrorReason { get; }
         public bool IsSuccessful { get => ErrorReason is null; }
         public bool IsEmpty { get => Characters is null; }

@@ -7,7 +7,7 @@ namespace CharacterAI.Models
 {
     public class CharacterResponse : CommonService
     {
-        public List<Reply>? Replies { get; }
+        public List<Reply> Replies { get; } = new();
         public string? LastUserMsgId { get; }
         public string? ErrorReason { get; }
         public bool IsSuccessful { get => ErrorReason is null; }
