@@ -1,4 +1,6 @@
-﻿namespace CharacterAI.Models
+﻿using Newtonsoft.Json.Linq;
+
+namespace CharacterAI.Models
 {
     public class Character
     {
@@ -7,12 +9,14 @@
             if (character is null) return;
 
             Id = character.external_id;
+            IsCopyable = character.copyable;
             Name = character.participant__name;
             Title = character.title;
             Greeting = character.greeting;
             Description = character.description;
             Author = character.user__username;
-            AvatarUrl = $"https://characterai.io/i/400/static/avatars/{character.avatar_file_name}";
+            AvatarUrlFull = $"https://characterai.io/i/400/static/avatars/{character.avatar_file_name}";
+            AvatarUrlMini = $"https://characterai.io/i/80/static/avatars/{character.avatar_file_name}";
             IsPublic = character.visibility == "PUBLIC";
             Interactions = character.participant__num_interactions;
             ImageGenEnabled = character.img_gen_enabled;
@@ -21,16 +25,19 @@
         }
 
         public bool IsEmpty { get => Id is null; }
+        public bool IsCopyable { get; set; }
         public string? Id { get; set; }
         public string? Name { get; set; }
         public string? Greeting { get; set; }
         public string? Tgt { get; set; }
-        public string? AvatarUrl { get; set; }
         public bool? IsPublic { get; set; }
         public ulong? Interactions { get; set; }
         public string? Author { get; set; }
         public bool? ImageGenEnabled { get; set; }
         public ulong? SearchScore { get; set; }
+        public string? AvatarUrlFull { get; set; }
+        public string? AvatarUrlMini { get; set; }
+
         public string Title
         {
             get => _title!;
