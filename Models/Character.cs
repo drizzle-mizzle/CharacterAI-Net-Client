@@ -19,6 +19,7 @@
             SearchScore = character.search_score;
             Tgt = character.participant__user__username;
         }
+
         public bool IsEmpty { get => Id is null; }
         public string? Id { get; set; }
         public string? Name { get; set; }

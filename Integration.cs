@@ -22,7 +22,7 @@ namespace CharacterAI
         // Use it to quickly setup integration with a character and get-last/create-new chat with it.
         public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
         {
-            Log($"Starting character setup... (Character ID: {characterId ?? _currentCharacter.Id})\n");
+            Log($"\nStarting character setup...\n  (Character ID: {characterId ?? _currentCharacter.Id})\n");
 
             Log("Fetching character info... ");
             var character = await GetInfoAsync(characterId);
@@ -41,6 +41,9 @@ namespace CharacterAI
             Success($"OK\n  (History ID: {historyId})");
             _chatsList.Add(historyId);
 
+            Log("CharacterAI - ");
+            Success("Ready\n");
+
             return new SetupResult(true);
         }
 
@@ -58,7 +61,7 @@ namespace CharacterAI
         }
 
         // Send message and get reply
-        public async Task<CharacterResponse> CallCharacterAsync(string message = "", string? imagePath = null, string? historyId = null, string? primaryMsgId = null, string? parentMsgId = null)
+        public async Task<CharacterResponse> CallCharacterAsync(string message = "", string? imagePath = null, string? historyId = null, ulong? primaryMsgId = null, ulong? parentMsgId = null)
         {
             var contentDynamic = BasicCallContent(_currentCharacter, message, imagePath, historyId ?? _chatsList.Last());
 
@@ -73,7 +76,7 @@ namespace CharacterAI
                 contentDynamic.primary_msg_id = primaryMsgId;
                 // (seen_msg_ids[] is also required, either it just won't work, but I didn't bother to collect
                 //  every single swiped message, just fill it with chosen one)
-                contentDynamic.seen_msg_ids = new string[] { primaryMsgId };
+                contentDynamic.seen_msg_ids = new ulong[] { (ulong)primaryMsgId };
             }
 
             // Prepare request content data
@@ -127,19 +130,14 @@ namespace CharacterAI
             request = SetHeadersForRequest(request);
 
             using var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
+
+            if (response.IsSuccessStatusCode)
             {
-                Failure(response: response);
-                return null;
+                var content = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<dynamic>(content)?.external_id;
             }
 
-            var content = await response.Content.ReadAsStringAsync();
-            var externalId = JsonConvert.DeserializeObject<dynamic>(content)?.external_id;
-
-            if (externalId is null)
-                return await CreateNewChatAsync(characterId);
-
-            return externalId;
+            return await CreateNewChatAsync(characterId);
         }
 
         // Create new chat with a character

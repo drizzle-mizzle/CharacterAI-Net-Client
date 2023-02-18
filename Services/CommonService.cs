@@ -57,15 +57,16 @@ namespace CharacterAI.Services
             }
 
             content.character_external_id = charInfo.Id!;
-            content.enable_tti = true;
+            content.chunks_to_pad = 8;
+            //content.enable_tti = true; have no idea what is it
             content.history_external_id = historyId;
-            content.text = msg;
-            content.tgt = charInfo.Tgt!;
+            content.is_proactive = false;
             content.ranking_method = "random";
             content.staging = false;
             content.stream_every_n_steps = 16;
-            content.chunks_to_pad = 8;
-            content.is_proactive = false;
+            content.text = msg;
+            content.tgt = charInfo.Tgt!;
+            content.voice_enabled = false;
 
             return content;
         }

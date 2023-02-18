@@ -8,7 +8,7 @@ namespace CharacterAI.Models
     public class CharacterResponse : CommonService
     {
         public List<Reply> Replies { get; } = new();
-        public string? LastUserMsgId { get; }
+        public ulong LastUserMsgId { get; }
         public string? ErrorReason { get; }
         public bool IsSuccessful { get => ErrorReason is null; }
 
@@ -39,6 +39,7 @@ namespace CharacterAI.Models
             {
                 string[] chunks = (await httpResponse.Content.ReadAsStringAsync()).Split("\n");
                 string finalChunk = chunks.First(c => JsonConvert.DeserializeObject<dynamic>(c)!.is_final_chunk == true);
+                Failure(finalChunk);
 
                 return JsonConvert.DeserializeObject<dynamic>(finalChunk)!;
             }
