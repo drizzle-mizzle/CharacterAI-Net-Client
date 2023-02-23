@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
+using System.Text.RegularExpressions;
 using CharacterAI.Services;
 using System.Runtime.Remoting;
 using Newtonsoft.Json.Linq;
@@ -38,17 +39,28 @@ namespace CharacterAI.Models
             try
             {
                 string[] chunks = (await httpResponse.Content.ReadAsStringAsync()).Split("\n");
-                string finalChunk = chunks.First(c => JsonConvert.DeserializeObject<dynamic>(c)!.is_final_chunk == true);
-                
-                return JsonConvert.DeserializeObject<dynamic>(finalChunk)!;
+                string finalChunk = chunks.First((string c) => ((dynamic)JsonConvert.DeserializeObject<object>(c)).is_final_chunk == true);
+                return JsonConvert.DeserializeObject<object>(finalChunk);
             }
             catch (Exception e)
             {
-                // gotta extend
-                string eMsg = "⚠️ Message has been sent successfully, but something went wrong... (probably, character reply was filtered and deleted, try again)";
-                Failure($"{eMsg}\n {e}", response: httpResponse);
-
-                return eMsg;
+                try
+                {
+                    // if the message was filtered, use the last coherent thought from the stream
+                    RegexOptions options = RegexOptions.Multiline | RegexOptions.RightToLeft;
+                    string pattern = @"\{.{0,}""replies"":[ ]{0,}\[.+\],.+\}";
+                    // this is a crude way of doing so, but it gets the job done
+                    var match = Regex.Matches(e.ToString(), pattern, options);
+                    string finalChunk = match[0].ToString();
+                    return JsonConvert.DeserializeObject<object>(finalChunk);
+                }
+                catch
+                {
+                    // gotta extend
+                    string eMsg = "⚠️ Message has been sent successfully, but something went wrong... (probably, character reply was filtered and deleted, try again)";
+                    Failure($"{eMsg}\n {e}", response: httpResponse);
+                    return eMsg2;
+                }
             }
         }
 
