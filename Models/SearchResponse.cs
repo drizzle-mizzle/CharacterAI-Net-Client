@@ -1,71 +1,100 @@
-﻿using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+﻿#region Assembly CharacterAI, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+// location unknown
+// Decompiled with ICSharpCode.Decompiler 7.1.0.6543
+#endregion
+
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Threading.Tasks;
 using CharacterAI.Services;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace CharacterAI.Models
 {
     public class SearchResponse : CommonService
     {
-        public List<Character> Characters { get; } = new();
+        public List<Character> Characters { get; } = new List<Character>();
+
+
         public string? ErrorReason { get; }
-        public bool IsSuccessful { get => ErrorReason is null; }
-        public bool IsEmpty { get => Characters is null; }
+
+        public bool IsSuccessful => ErrorReason == null;
+
+        public bool IsEmpty => Characters == null;
 
         public SearchResponse(HttpResponseMessage httpResponse)
         {
-            dynamic? responseParsed = ParseSearchResponse(httpResponse).Result;
-
-            if (responseParsed is null) return;
-            if (responseParsed is string)
+            dynamic result = ParseSearchResponse(httpResponse).Result;
+            if ((object)result != null)
             {
-                ErrorReason = responseParsed;
-
-                return;
+                if (result is string)
+                {
+                    ErrorReason = result;
+                }
+                else
+                {
+                    Characters = result;
+                }
             }
-
-            Characters = responseParsed;
         }
 
         private static async Task<dynamic?> ParseSearchResponse(HttpResponseMessage httpResponse)
         {
             if (!httpResponse.IsSuccessStatusCode)
             {
-                Failure(response: httpResponse);
+                CommonService.Failure("", httpResponse);
                 return "Something went wrong";
             }
 
-            var content = await httpResponse.Content.ReadAsStringAsync();
-            JArray jCharacters = JsonConvert.DeserializeObject<dynamic>(content)!.characters;
+            JArray jCharacters = ((dynamic)JsonConvert.DeserializeObject<object>(await httpResponse.Content.ReadAsStringAsync())).characters;
+            if (!jCharacters.HasValues)
+            {
+                return null;
+            }
 
-            if (!jCharacters.HasValues) return null;
-
-            var charactersList = new List<Character>();
-            foreach (var character in jCharacters.ToObject<List<dynamic>>()!)
+            List<Character> charactersList = new List<Character>();
+            foreach (dynamic character in jCharacters.ToObject<List<object>>()!)
+            {
                 charactersList.Add(new Character(character));
+            }
 
             return charactersList;
         }
     }
 }
-
-//"characters":
-//[
-//  {
-//    "external_id": "00nGgJmkFv7Ntw1QUfnzGRxnU1h0Un7VHg5N7qhg4Cs",
-//    "title": "Urushibara Luka from Steins;Gate",
-//    "greeting": "P-pleased to meet you...",
-//    "description": "Luka is 16 years old boy from Tokyo. He lives and serves as miko in Yanagibayashi Shrine run by his father near Akihabara.\nSoft-spoken, gentle, and polite to everyone, Luka is the very model of traditional Japanese femininity - except that he's a guy.\nHe's extremely shy and has difficulty asserting himself. ",
-//    "avatar_file_name": "uploaded/2023/1/7/ZRnaLo8lvdp_klAvR3C7Ll0jBRBMJWZAOXrK73v_1N0.webp",
-//    "visibility": "PUBLIC",
-//    "copyable": true,
-//    "participant__name": "Urushibara Luka",
-//    "participant__num_interactions": 4083,
-//    "user__id": 1143991,
-//    "user__username": "drizzle_mizzle",
-//    "img_gen_enabled": false,
-//    "priority": 0,
-//    "search_score": 30
-//  },
-//  { }, { }, { } ...
-//  ...
-//]
+#if false // Decompilation log
+'177' items in cache
+------------------
+Resolve: 'System.Runtime, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Found single assembly: 'System.Runtime, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Load from: 'C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\7.0.0\ref\net7.0\System.Runtime.dll'
+------------------
+Resolve: 'System.Collections, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Found single assembly: 'System.Collections, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Load from: 'C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\7.0.0\ref\net7.0\System.Collections.dll'
+------------------
+Resolve: 'System.Net.Http, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Found single assembly: 'System.Net.Http, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Load from: 'C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\7.0.0\ref\net7.0\System.Net.Http.dll'
+------------------
+Resolve: 'System.Linq.Expressions, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Found single assembly: 'System.Linq.Expressions, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Load from: 'C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\7.0.0\ref\net7.0\System.Linq.Expressions.dll'
+------------------
+Resolve: 'System.Console, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Found single assembly: 'System.Console, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Load from: 'C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\7.0.0\ref\net7.0\System.Console.dll'
+------------------
+Resolve: 'Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'
+Found single assembly: 'Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'
+Load from: 'C:\Users\t y\.nuget\packages\newtonsoft.json\13.0.2\lib\net6.0\Newtonsoft.Json.dll'
+------------------
+Resolve: 'Microsoft.CSharp, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Found single assembly: 'Microsoft.CSharp, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Load from: 'C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\7.0.0\ref\net7.0\Microsoft.CSharp.dll'
+------------------
+Resolve: 'System.Linq, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Found single assembly: 'System.Linq, Version=7.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Load from: 'C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\7.0.0\ref\net7.0\System.Linq.dll'
+#endif
