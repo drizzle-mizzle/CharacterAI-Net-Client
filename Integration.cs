@@ -117,6 +117,27 @@ namespace CharacterAI
 
             return new Character(character);
         }
+ 
+        // Test
+        //public async Task<Character> GetInfoNew(string? characterId = null)
+        //{
+        //    string url = $"https://beta.character.ai/chat/character/info-cached/{characterId ?? _currentCharacter.Id!}";
+        //    HttpRequestMessage request = new(HttpMethod.Get, url);
+        //    request = SetHeadersForRequest(request);
+
+        //    var response = await _httpClient.SendAsync(request);
+        //    var content = await response.Content.ReadAsStringAsync();
+        //    Success(content);
+
+        //    dynamic? character = null;
+
+        //    if (response.IsSuccessStatusCode)
+        //        character = JsonConvert.DeserializeObject<dynamic>(content)?.character;
+        //    else
+        //        Failure(response: response);
+
+        //    return new Character(character);
+        //}
 
         // Fetch last chat histoty or create one
         // returns chat history id if successful
@@ -162,7 +183,7 @@ namespace CharacterAI
             var content = await response.Content.ReadAsStringAsync();
             var externalId = JsonConvert.DeserializeObject<dynamic>(content)?.external_id;
             if (externalId is null)
-                Failure("Something went wrong...", response: response);;
+                Failure("Something went wrong...", response: response);
 
             return externalId;
         }
@@ -177,7 +198,7 @@ namespace CharacterAI
             });
             request.Headers.Add("accept-encoding", "gzip");
             request = SetHeadersForRequest(request);
-            
+
 
             var response = await _httpClient.SendAsync(request);
 
@@ -227,24 +248,23 @@ namespace CharacterAI
             {
                 "Accept", "application/json, text/plain, */*",
                 "Authorization", $"Token {_userToken}",
-                "accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+                "accept-Language", "en-US;q=0.8,en;q=0.7",
                 "accept-encoding", "deflate, br",
                 "ContentType", "application/json",
                 "dnt", "1",
                 "Origin", "https://beta.character.ai",
                 "Referer", $"https://beta.character.ai/" + (_currentCharacter?.Id is null ? "search?" : $"chat?char={_currentCharacter.Id}"),
-                "sec-ch-ua", "\"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"108\", \"Google Chrome\";v=\"108\"",
+                "sec-ch-ua", "\"Chromium\";v=\"109\", \"Not_A Brand\";v=\"99\"",
                 "sec-ch-ua-mobile", "?0",
-                "sec-ch-ua-platform", "Windows",
                 "sec-fetch-dest", "empty",
                 "sec-fetch-mode", "cors",
                 "sec-fetch-site", "same-origin",
-                "User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                "User-Agent", "Chrome/108.0.0.0"
             };
 
-            for (int i = 0; i < headers.Length-1; i+=2)
-                request!.Headers.Add(headers[i], headers[i+1]);
-
+            for (int i = 0; i < headers.Length - 1; i += 2)
+                request!.Headers.Add(headers[i], headers[i + 1]);
+            
             return request!;
         }
     }
