@@ -13,11 +13,14 @@ namespace CharacterAI
 
         private Character _currentCharacter = new();
         private readonly List<string> _chatsList = new();
-        private readonly HttpClient _httpClient = new();
+        private readonly HttpClient _httpClient;
         private readonly string? _userToken;
 
         public Integration(string userToken)
-            => _userToken = userToken;
+        {
+            _userToken = userToken;
+            _httpClient = CreateHttpClient();
+        }
 
         // Use it to quickly setup integration with a character and get-last/create-new chat with it.
         public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
@@ -87,7 +90,6 @@ namespace CharacterAI
             HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/streaming/");
             request.Content = requestContent;
             request.Headers.Add("accept-encoding", "gzip");
-            request = SetHeadersForRequest(request);
 
             // Send request
             var response = await _httpClient.SendAsync(request);
@@ -104,7 +106,6 @@ namespace CharacterAI
             request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
                 { "external_id", characterId ?? _currentCharacter.Id! }
             });
-            request = SetHeadersForRequest(request);
 
             var response = await _httpClient.SendAsync(request);
             var content = await response.Content.ReadAsStringAsync();
@@ -117,7 +118,7 @@ namespace CharacterAI
 
             return new Character(character);
         }
- 
+
         // Test
         //public async Task<Character> GetInfoNew(string? characterId = null)
         //{
@@ -148,7 +149,6 @@ namespace CharacterAI
             request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
                 { "character_external_id", characterId ?? _currentCharacter.Id! }
             });
-            request = SetHeadersForRequest(request);
 
             using var response = await _httpClient.SendAsync(request);
 
@@ -171,7 +171,6 @@ namespace CharacterAI
                 { "character_external_id", characterId ?? _currentCharacter.Id! },
                 { "override_history_set", null! }
             });
-            request = SetHeadersForRequest(request);
 
             using var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
@@ -197,7 +196,6 @@ namespace CharacterAI
                 { "number", "50" } // Idk what it is. Probably an amount of chats to show. Default value is 50, so I'll just leave it like this.
             });
             request.Headers.Add("accept-encoding", "gzip");
-            request = SetHeadersForRequest(request);
 
 
             var response = await _httpClient.SendAsync(request);
@@ -210,7 +208,6 @@ namespace CharacterAI
         {
             string url = $"https://beta.character.ai/chat/characters/search/?query={query}";
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request = SetHeadersForRequest(request);
 
             using var response = await _httpClient.SendAsync(request);
 
@@ -227,7 +224,6 @@ namespace CharacterAI
 
             var request = new HttpRequestMessage(HttpMethod.Post, "https://beta.character.ai/chat/upload-image/");
             request.Content = new MultipartFormDataContent { { image, "\"image\"", $"\"image.jpg\"" } };
-            request = SetHeadersForRequest(request);
 
             using var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
@@ -241,14 +237,15 @@ namespace CharacterAI
             return JsonConvert.DeserializeObject<dynamic>(content)?.value;
         }
 
-        private HttpRequestMessage SetHeadersForRequest(HttpRequestMessage request)
+        private HttpClient CreateHttpClient()
         {
-            // just a copypaste from my own browser
+            var httpClient = new HttpClient();
             var headers = new string[]
             {
-                "Accept", "application/json, text/plain, */*",
+                "Accept", "text/html,application/xhtml+xml,application/json,application/xml,text/plain,*/*",
                 "Authorization", $"Token {_userToken}",
                 "accept-Language", "en-US;q=0.8,en;q=0.7",
+                "Accept-Charset", "ISO-8859-1",
                 "accept-encoding", "deflate, br",
                 "ContentType", "application/json",
                 "dnt", "1",
@@ -263,9 +260,9 @@ namespace CharacterAI
             };
 
             for (int i = 0; i < headers.Length - 1; i += 2)
-                request!.Headers.Add(headers[i], headers[i + 1]);
-            
-            return request!;
+                httpClient.DefaultRequestHeaders.Add(headers[i], headers[i + 1]);
+
+            return httpClient;
         }
     }
 }
