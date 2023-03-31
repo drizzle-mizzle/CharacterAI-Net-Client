@@ -312,30 +312,38 @@ namespace CharacterAI
                 "It may take some time on the first launch, because it will need to download a Chrome executable (~450mb).\n" +
                 "If this process takes too much time, ensure you have good internet connection (timeout = 15 minutes).\n");
 
-            PrepareDirectories();
-
-            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = CHROME_PATH });
-            await browserFetcher.DownloadAsync();
-
-            string chromeOsPath = Directory.GetDirectories(CHROME_PATH).First(); // Windows-xxx or Linux-xxx
-            string chromeMainFolder = Directory.GetDirectories(chromeOsPath).First(); // chrome-win or chrome-linux
-            bool isWindows = chromeMainFolder.Split("-").Last() == "win";
-
-            EXEC_PATH = $"{chromeMainFolder}{SC}chrome";
-            if (isWindows) EXEC_PATH += ".exe";
-
-            KillChromes(EXEC_PATH);
-
-            _browser = await Puppeteer.LaunchAsync(new ()
+            try
             {
-                Headless = true,
-                UserDataDir = $"{CD}{SC}puppeteer-user",
-                ExecutablePath = EXEC_PATH,
-                Timeout = 900_000 // 15 minutes
-            });
+                PrepareDirectories();
 
-            Log("Chrome - ");
-            Success("Running");
+                using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = CHROME_PATH });
+                await browserFetcher.DownloadAsync();
+
+                string chromeOsPath = Directory.GetDirectories(CHROME_PATH).First(); // Windows-xxx or Linux-xxx
+                string chromeMainFolder = Directory.GetDirectories(chromeOsPath).First(); // chrome-win or chrome-linux
+                bool isWindows = chromeMainFolder.Split("-").Last() == "win";
+
+                EXEC_PATH = $"{chromeMainFolder}{SC}chrome";
+                if (isWindows) EXEC_PATH += ".exe";
+
+                KillChromes(EXEC_PATH);
+
+                _browser = await Puppeteer.LaunchAsync(new()
+                {
+                    Headless = true,
+                    UserDataDir = $"{CD}{SC}puppeteer-user",
+                    ExecutablePath = EXEC_PATH,
+                    Timeout = 900_000 // 15 minutes
+                });
+
+                Log("Chrome - ");
+                Success("Running");
+            }
+            catch (Exception e)
+            {
+                Failure(e.ToString());
+                throw;
+            }
         }
 
         public static void KillChromes(string execPath)
