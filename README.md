@@ -1,6 +1,12 @@
+**CharacterAI.Net is an unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service.**
+<div align="center">
+
 ![68747470733a2f2f692e696d6775722e636f6d2f483568446970702e6a7067](https://user-images.githubusercontent.com/55811932/218872979-40a643e4-23e7-4dc5-9c21-b88b04fe0cce.png)
 
-**CharacterAI.Net is an unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service.**
+<sup><b>
+If you found this project useful, the best way to thank me is to simply leave a star ⭐<br>
+Also, check out my [CharacterAI-Discord-Bot](https://github.com/drizzle-mizzle/CharacterAI-Discord-Bot), the parent-project of this repository.</b></sup>
+</div>
 
 ## 📓 Documentation
 - [Getting started](https://github.com/drizzle-mizzle/CharacterAI.Net/wiki/Getting-started)
