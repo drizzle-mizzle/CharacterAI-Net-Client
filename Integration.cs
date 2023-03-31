@@ -15,8 +15,8 @@ namespace CharacterAI
         private readonly List<string> _chatsList = new();
         private readonly List<string> _requestQueue = new();
 
-        public Character CurrentCharacter { get => _currentCharacter; }
-        public List<string> Chats { get => _chatsList; }
+        public Character CurrentCharacter => _currentCharacter;
+        public List<string> Chats => _chatsList;
 
         public string EXEC_PATH = null!;
 

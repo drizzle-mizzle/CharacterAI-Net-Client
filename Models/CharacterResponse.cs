@@ -9,7 +9,7 @@ namespace CharacterAI.Models
         public List<Reply> Replies { get; } = new();
         public ulong LastUserMsgId { get; }
         public string? ErrorReason { get; }
-        public bool IsSuccessful { get => ErrorReason is null; }
+        public bool IsSuccessful => ErrorReason is null;
 
         public CharacterResponse(PuppeteerResponse response)
         {

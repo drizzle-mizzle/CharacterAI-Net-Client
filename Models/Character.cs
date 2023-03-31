@@ -24,7 +24,7 @@ namespace CharacterAI.Models
             Tgt = character.participant__user__username;
         }
 
-        public bool IsEmpty { get => Id is null; }
+        public bool IsEmpty => Id is null;
         public bool IsCopyable { get; set; }
         public string? Id { get; set; }
         public string? Name { get; set; }
