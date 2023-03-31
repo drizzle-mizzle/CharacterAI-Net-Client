@@ -2,55 +2,61 @@
 using CharacterAI.Services;
 using Newtonsoft.Json;
 using System.Net.Http.Headers;
-using System.Text;
+using PuppeteerSharp;
+using System.Diagnostics;
 
 namespace CharacterAI
 {
     public class Integration : CommonService
     {
+        private IBrowser _browser = null!;
+        private readonly string? _userToken;
+        private Character _currentCharacter = new();
+        private readonly List<string> _chatsList = new();
+
         public Character CurrentCharacter { get => _currentCharacter; }
         public List<string> Chats { get => _chatsList; }
 
-        private Character _currentCharacter = new();
-        private readonly List<string> _chatsList = new();
-        private readonly HttpClient _httpClient;
-        private readonly string? _userToken;
 
         public Integration(string userToken)
-        {
-            _userToken = userToken;
-            _httpClient = CreateHttpClient();
-        }
+            => _userToken = userToken;
 
         // Use it to quickly setup integration with a character and get-last/create-new chat with it.
         public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
         {
             Log($"\nStarting character setup...\n  (Character ID: {characterId ?? _currentCharacter.Id})\n");
-
             Log("Fetching character info... ");
+
+            // Get info about character
             var character = await GetInfoAsync(characterId);
             if (character.IsEmpty)
                 return new SetupResult(false, "Failed to get character info.");
 
-            Success($"OK\n  (Character name: {character.Name})");
+            _ = Success($"OK\n  (Character name: {character.Name})");
+
+            // Set it as a current character and forget all (local) chats with a previous character
             _currentCharacter = character;
             _chatsList.Clear();
 
             Log("Fetching dialog history... ");
+
+            // Find last chat or create a new one
             var historyId = startWithNewChat ? await CreateNewChatAsync() : await GetLastChatAsync();
             if (historyId is null)
                 return new SetupResult(false, "Failed to get chat history.");
 
             Success($"OK\n  (History ID: {historyId})");
+
+            // Remember chat
             _chatsList.Add(historyId);
 
-            Log("CharacterAI - ");
+            Log("\nCharacterAI - ");
             Success("Ready\n");
-
+        
             return new SetupResult(true);
         }
 
-        // Forget all chats with a character and create new one
+        // Short version of SetupAsync for a current character
         public async Task<SetupResult> Reset()
         {
             _chatsList.Clear();
@@ -82,17 +88,8 @@ namespace CharacterAI
                 contentDynamic.seen_msg_ids = new ulong[] { (ulong)primaryMsgId };
             }
 
-            // Prepare request content data
-            var requestContent = new ByteArrayContent(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(contentDynamic)));
-            requestContent.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-
-            // Create request
-            HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/streaming/");
-            request.Content = requestContent;
-            request.Headers.Add("accept-encoding", "gzip");
-
-            // Send request
-            var response = await _httpClient.SendAsync(request);
+            string url = "https://beta.character.ai/chat/streaming/";            
+            var response = await RequestForCall(url, contentDynamic);
 
             return new CharacterResponse(response);
         }
@@ -100,65 +97,33 @@ namespace CharacterAI
         // Get info about character
         public async Task<Character> GetInfoAsync(string? characterId = null)
         {
-            string url = "https://beta.character.ai/chat/character/info/";
+            string url = $"https://beta.character.ai/chat/character/info/";
+            var data = new Dictionary<string, string>() { { "external_id", characterId ?? CurrentCharacter.Id! } };
+            var response = await RequestPost(url, data);
 
-            HttpRequestMessage request = new(HttpMethod.Post, url);
-            request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
-                { "external_id", characterId ?? _currentCharacter.Id! }
-            });
-
-            var response = await _httpClient.SendAsync(request);
-            var content = await response.Content.ReadAsStringAsync();
             dynamic? character = null;
 
-            if (response.IsSuccessStatusCode)
-                character = JsonConvert.DeserializeObject<dynamic>(content)?.character;
+            if (response.IsSuccessful)
+                character = JsonConvert.DeserializeObject<dynamic>(response.Content!)?.character;
             else
                 Failure(response: response);
 
             return new Character(character);
         }
 
-        // Test
-        //public async Task<Character> GetInfoNew(string? characterId = null)
-        //{
-        //    string url = $"https://beta.character.ai/chat/character/info-cached/{characterId ?? _currentCharacter.Id!}";
-        //    HttpRequestMessage request = new(HttpMethod.Get, url);
-        //    request = SetHeadersForRequest(request);
-
-        //    var response = await _httpClient.SendAsync(request);
-        //    var content = await response.Content.ReadAsStringAsync();
-        //    Success(content);
-
-        //    dynamic? character = null;
-
-        //    if (response.IsSuccessStatusCode)
-        //        character = JsonConvert.DeserializeObject<dynamic>(content)?.character;
-        //    else
-        //        Failure(response: response);
-
-        //    return new Character(character);
-        //}
-
-        // Fetch last chat histoty or create one
-        // returns chat history id if successful
-        // returns null if fails
         public async Task<string?> GetLastChatAsync(string? characterId = null)
         {
-            HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/history/continue/");
-            request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
-                { "character_external_id", characterId ?? _currentCharacter.Id! }
+            string url = "https://beta.character.ai/chat/history/continue/";
+            
+            var data = new FormUrlEncodedContent(new Dictionary<string, string> {
+                { "character_external_id", characterId ?? CurrentCharacter.Id! }
             });
 
-            using var response = await _httpClient.SendAsync(request);
+            var response = await RequestPost(url, data);
 
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                return JsonConvert.DeserializeObject<dynamic>(content)?.external_id;
-            }
-
-            return await CreateNewChatAsync(characterId);
+            return response.IsSuccessful ?
+                JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id :
+                await CreateNewChatAsync(characterId);
         }
 
         // Create new chat with a character
@@ -166,50 +131,45 @@ namespace CharacterAI
         // returns null if fails
         public async Task<string?> CreateNewChatAsync(string? characterId = null)
         {
-            HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/history/create/");
-            request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
-                { "character_external_id", characterId ?? _currentCharacter.Id! },
-                { "override_history_set", null! }
-            });
+            string url = "https://beta.character.ai/chat/history/create/";
+            var data = new Dictionary<string, string> {
+                { "character_external_id", characterId ?? _currentCharacter.Id! }
+            };
 
-            using var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
+            var response = await RequestPost(url, data);
+            if (!response.IsSuccessful)
             {
                 Failure(response: response);
                 return null;
             }
 
-            var content = await response.Content.ReadAsStringAsync();
-            var externalId = JsonConvert.DeserializeObject<dynamic>(content)?.external_id;
+            var externalId = JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id;
             if (externalId is null)
                 Failure("Something went wrong...", response: response);
 
-            return externalId;
+            return externalId!;
         }
 
         // not working
-        public async Task<HistoriesResponse> GetHistoriesAsync(string? characterId = null)
-        {
-            HttpRequestMessage request = new(HttpMethod.Post, "https://beta.character.ai/chat/character/histories/");
-            request.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
-                { "external_id", characterId ?? _currentCharacter.Id! },
-                { "number", "50" } // Idk what it is. Probably an amount of chats to show. Default value is 50, so I'll just leave it like this.
-            });
-            request.Headers.Add("accept-encoding", "gzip");
+        //public async Task<HistoriesResponse> GetHistoriesAsync(string? characterId = null)
+        //{
+        //    string url = "https://beta.character.ai/chat/character/histories/";
 
+        //    var data = new Dictionary<string, string> {
+        //        { "external_id", characterId ?? _currentCharacter.Id! },
+        //        { "number", "50" } // Idk what it is. Probably an amount of chats to show. Default value is 50, so I'll just leave it like this.
+        //    };
 
-            var response = await _httpClient.SendAsync(request);
+        //    var response = await Request(HttpMethod.Get, url, data);
 
-            return new HistoriesResponse(response);
-        }
+        //    return new HistoriesResponse(response);
+        //}
 
         // Search for a character
         public async Task<SearchResponse> SearchAsync(string query)
         {
             string url = $"https://beta.character.ai/chat/characters/search/?query={query}";
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
-
-            using var response = await _httpClient.SendAsync(request);
+            var response = await RequestGet(url);
 
             return new SearchResponse(response);
         }
@@ -221,48 +181,170 @@ namespace CharacterAI
         {
             var image = new ByteArrayContent(img);
             image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/jpeg");
+            var requestContent = new MultipartFormDataContent { { image, "\"image\"", $"\"image.jpg\"" } };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, "https://beta.character.ai/chat/upload-image/");
-            request.Content = new MultipartFormDataContent { { image, "\"image\"", $"\"image.jpg\"" } };
+            string url = "https://beta.character.ai/chat/upload-image/";
+            var response = await RequestPost(url, requestContent);
 
-            using var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                Failure(response: response);
-                return null;
-            }
+            if (response.IsSuccessful)
+                return JsonConvert.DeserializeObject<dynamic>(response.Content!)?.value;
 
-            var content = await response.Content.ReadAsStringAsync();
-
-            return JsonConvert.DeserializeObject<dynamic>(content)?.value;
+            Failure(response: response);
+            return null;
         }
 
-        private HttpClient CreateHttpClient()
+        private async Task<PuppeteerResponse> RequestGet(string url)
         {
-            var httpClient = new HttpClient();
-            var headers = new string[]
+            if (_browser is null)
+                throw new Exception("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+
+            var page = await _browser.NewPageAsync();
+            await page.SetRequestInterceptionAsync(true);
+
+            page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get);
+
+            var response = await page.GoToAsync(url);
+            var content = await response.TextAsync();
+            _ = page.CloseAsync();
+
+            return new PuppeteerResponse(content, response.Ok);
+        }
+
+        private async Task<PuppeteerResponse> RequestPost(string url, dynamic? data = null)
+        {
+            if (_browser is null)
+                throw new Exception("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+
+            var page = await _browser.NewPageAsync();
+            await page.SetRequestInterceptionAsync(true);
+
+            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post);
+
+            var response = await page.GoToAsync(url);
+            var content = await response.TextAsync();
+            _ = page.CloseAsync();
+
+            return new PuppeteerResponse(content, response.Ok);
+        }
+
+        // YES, THAT IS THE ONLY WAY IT CAN WORK RIGHT NOW
+        private async Task<PuppeteerResponse?> RequestForCall(string url, dynamic data)
+        {
+            string savesPath = $"{CD}{SC}saves{SC}";
+
+            var page = await _browser.NewPageAsync();
+            await page.SetRequestInterceptionAsync(true);
+            await page.Client.SendAsync("Page.setDownloadBehavior", new
             {
-                "Accept", "text/html,application/xhtml+xml,application/json,application/xml,text/plain,*/*",
-                "Authorization", $"Token {_userToken}",
-                "accept-Language", "en-US;q=0.8,en;q=0.7",
-                "Accept-Charset", "ISO-8859-1",
-                "accept-encoding", "deflate, br",
-                "ContentType", "application/json",
-                "dnt", "1",
-                "Origin", "https://beta.character.ai",
-                "Referer", $"https://beta.character.ai/" + (_currentCharacter?.Id is null ? "search?" : $"chat?char={_currentCharacter.Id}"),
-                "sec-ch-ua", "\"Chromium\";v=\"109\", \"Not_A Brand\";v=\"99\"",
-                "sec-ch-ua-mobile", "?0",
-                "sec-fetch-dest", "empty",
-                "sec-fetch-mode", "cors",
-                "sec-fetch-site", "same-origin",
-                "User-Agent", "Chrome/108.0.0.0"
+                behavior = "allow",
+                downloadPath = savesPath
+            });
+            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post);
+
+            try { await page.GoToAsync(url); } // it will always throw an exception
+            catch (NavigationException)
+            {
+                // "download" is a temporary file name where response content is saved
+                string responsePath = $"{savesPath}{SC}download";
+
+                // Wait 30 seconds for a response to download
+                for (int i = 0; i < 15; i++)
+                {
+                    await Task.Delay(2000);
+
+                    if (File.Exists(responsePath)) break;
+                }
+                await page.CloseAsync();
+
+                if (!File.Exists(responsePath)) return new PuppeteerResponse(null, false); ;
+
+                var content = File.ReadAllText(responsePath);
+                if (string.IsNullOrEmpty(content)) return new PuppeteerResponse(null, false); ;
+
+                File.Delete(responsePath);
+
+                return new PuppeteerResponse(content, true);
+            }
+            _ = page.CloseAsync();
+
+            return new PuppeteerResponse(null, false);
+        }
+
+        private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method)
+        {
+            var r = args.Request;
+            var payload = CreateRequestPayload(method, data);
+
+            await r.ContinueAsync(payload);
+        }
+
+        private Payload CreateRequestPayload(HttpMethod method, dynamic? data)
+        {
+            var headers = new Dictionary<string, string> {
+                { "authorization", $"Token {_userToken}" },
+                { "accept", @"application/json, text/plain, */*" },
+                { "accept-encoding", "gzip, deflate, br" },
+                { "content-type", "application/json" },
+                { "user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"}
             };
+            string? serializedData = data is null ? null : JsonConvert.SerializeObject(data);
 
-            for (int i = 0; i < headers.Length - 1; i += 2)
-                httpClient.DefaultRequestHeaders.Add(headers[i], headers[i + 1]);
+            return new Payload() { Method = method, Headers = headers, PostData = serializedData };
+        }
 
-            return httpClient;
+        public async Task LaunchChromeAsync()
+        {
+            Log("\nLaunching browser... (it may take some time at the first launch)\n");
+
+            PrepareDirectories();
+
+            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = CHROME_PATH });
+            await browserFetcher.DownloadAsync();
+            
+            string execPath = $"{Directory.GetDirectories(CHROME_PATH).First()}{SC}chrome-win{SC}chrome.exe";
+
+            KillChromes(execPath);
+
+            _browser = await Puppeteer.LaunchAsync(new ()
+            {
+                Headless = true,
+                UserDataDir = $"{CD}{SC}puppeteer-user",
+                ExecutablePath = execPath,
+                Timeout = 120000
+            });
+
+            Log("Chrome - ");
+            Success("Running");
+        }
+
+        private static void KillChromes(string execPath)
+        {
+            var runningProcesses = Process.GetProcesses();
+            int killedCount = 0;
+
+            foreach (var process in runningProcesses)
+            {
+                bool isPuppeteerChrome = process.ProcessName == "chrome" &&
+                                         process.MainModule != null &&
+                                         process.MainModule.FileName == execPath;
+
+                if (isPuppeteerChrome)
+                {
+                    process.Kill();
+                    killedCount++;
+                }
+            }
+        }
+
+        private static void PrepareDirectories()
+        {
+            string savesPath = $"{CD}{SC}puppeteer-downloads";
+            string userPath = $"{CD}{SC}puppeteer-user";
+
+            if (!Directory.Exists(userPath)) Directory.CreateDirectory(userPath);
+            if (Directory.Exists(savesPath)) Directory.Delete(savesPath, true);
+
+            Directory.CreateDirectory(savesPath);
         }
     }
 }

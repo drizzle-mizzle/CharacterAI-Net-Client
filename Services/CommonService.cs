@@ -6,6 +6,11 @@ namespace CharacterAI.Services
     public partial class CommonService
     {
 
+        internal static string CD = Directory.GetCurrentDirectory();
+        internal static char SC = Path.DirectorySeparatorChar;
+
+        internal static string CHROME_PATH = $"{CD}{SC}puppeteer-chrome";
+
         // Log and return true
         internal static bool Success(string logText = "")
         {
@@ -15,24 +20,24 @@ namespace CharacterAI.Services
         }
 
         // Log and return false
-        internal static bool Failure(string logText = "", HttpResponseMessage? response = null)
+        internal static bool Failure(string logText = "", PuppeteerResponse? response = null)
         {
             if (logText != "")
                 Log(logText + "\n", ConsoleColor.Red);
 
             if (response is not null)
             {
-                var request = response.RequestMessage!;
-                var url = request.RequestUri;
-                var responseContent = response.Content?.ReadAsStringAsync().Result;
-                var requestContent = request.Content?.ReadAsStringAsync().Result;
+                //var request = response.OriginalResponse.Request!;
+                //var rPayload = response.OriginalRequestPayload;
 
-                Log($"Error!\n Request failed! ({url})\n", ConsoleColor.Red);
-                Log(color: ConsoleColor.Red,
-                    text: $" Response: {response.ReasonPhrase}\n" +
-                          (requestContent is null ? "" : $" Request Content: {requestContent}\n") +
-                          (requestContent is null ? "" : $" Response Content: {responseContent}\n")
-                    );
+                //Log(color: ConsoleColor.Red,
+                //    text: $"Error!\n Request failed! ({request.Url})\n  " +
+                //          $"{string.Join("\n  ", rPayload.Headers)}\n" +
+                //          $" Request Content: {(rPayload.PostData == null ? "empty" : $"\n  {rPayload.PostData}" )}\n");
+
+                //Log(color: ConsoleColor.Magenta,
+                //    text: $"\n Response:\n  {string.Join("\n  ", response.OriginalResponse.Headers)}\n" +
+                //          $" Response Content:\n  {response.Content}\n");
             }
 
             return false;
@@ -58,11 +63,13 @@ namespace CharacterAI.Services
 
             content.character_external_id = charInfo.Id!;
             content.chunks_to_pad = 8;
-            //content.enable_tti = true; have no idea what is it
+            //content.enable_tti = true; // have no idea what is it
+            content.give_room_introductions = true;
             content.history_external_id = historyId;
-            content.is_proactive = false;
+            content.is_proactive = false; // have no idea what is it
+            content.num_candidates = 1; // have no idea what is it
             content.ranking_method = "random";
-            content.staging = false;
+            content.staging = false; // have no idea what is it
             content.stream_every_n_steps = 16;
             content.text = msg;
             content.tgt = charInfo.Tgt!;

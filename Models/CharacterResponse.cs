@@ -1,6 +1,5 @@
 ﻿using Newtonsoft.Json;
 using CharacterAI.Services;
-using System.Runtime.Remoting;
 using Newtonsoft.Json.Linq;
 
 namespace CharacterAI.Models
@@ -12,9 +11,9 @@ namespace CharacterAI.Models
         public string? ErrorReason { get; }
         public bool IsSuccessful { get => ErrorReason is null; }
 
-        public CharacterResponse(HttpResponseMessage httpResponse)
+        public CharacterResponse(PuppeteerResponse response)
         {
-            dynamic responseParsed = ParseCharacterResponse(httpResponse).Result;
+            dynamic responseParsed = ParseCharacterResponse(response);
 
             if (responseParsed is string)
                 ErrorReason = responseParsed;
@@ -25,28 +24,27 @@ namespace CharacterAI.Models
             }
         }
 
-        private static async Task<dynamic> ParseCharacterResponse(HttpResponseMessage httpResponse)
+        private static dynamic ParseCharacterResponse(PuppeteerResponse response)
         {
-            if (!httpResponse.IsSuccessStatusCode)
+            if (!response.IsSuccessful)
             {
                 string eMsg = "⚠️ Failed to send message!";
-                Failure(eMsg, response: httpResponse);
+                Failure(response: response);
 
                 return eMsg;
             }
 
             try
             {
-                string[] chunks = (await httpResponse.Content.ReadAsStringAsync()).Split("\n");
+                string[] chunks = response.Content!.Split("\n");
                 string finalChunk = chunks.First(c => JsonConvert.DeserializeObject<dynamic>(c)!.is_final_chunk == true);
                 
                 return JsonConvert.DeserializeObject<dynamic>(finalChunk)!;
             }
             catch (Exception e)
             {
-                // gotta extend
                 string eMsg = "⚠️ Message has been sent successfully, but something went wrong... (probably, character reply was filtered and deleted, try again)";
-                Failure($"{eMsg}\n {e}", response: httpResponse);
+                Failure($"{eMsg}\n {e}", response: response);
 
                 return eMsg;
             }

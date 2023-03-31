@@ -11,9 +11,9 @@ namespace CharacterAI.Models
         public bool IsSuccessful { get => ErrorReason is null; }
         public bool IsEmpty { get => Histories is null; }
 
-        public HistoriesResponse(HttpResponseMessage httpResponse)
+        public HistoriesResponse(PuppeteerResponse httpResponse)
         {
-            dynamic? responseParsed = ParseHistoriesResponse(httpResponse).Result;
+            dynamic? responseParsed = ParseHistoriesResponse(httpResponse);
 
             if (responseParsed is null) return;
             if (responseParsed is string)
@@ -26,15 +26,15 @@ namespace CharacterAI.Models
             Histories = responseParsed;
         }
 
-        private static async Task<dynamic?> ParseHistoriesResponse(HttpResponseMessage httpResponse)
+        private static dynamic? ParseHistoriesResponse(PuppeteerResponse response)
         {
-            if (!httpResponse.IsSuccessStatusCode)
+            if (!response.IsSuccessful)
             {
-                Failure(response: httpResponse);
+                Failure(response: response);
                 return "Something went wrong";
             }
 
-            var content = await httpResponse.Content.ReadAsStringAsync();
+            var content = response.Content!;
             JArray jHistories = JsonConvert.DeserializeObject<dynamic>(content)!.histories;
 
             if (!jHistories.HasValues) return null;
