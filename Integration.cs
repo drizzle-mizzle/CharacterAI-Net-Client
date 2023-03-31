@@ -308,7 +308,9 @@ namespace CharacterAI
 
         public async Task LaunchChromeAsync()
         {
-            Log("\nLaunching browser... (it may take some time at the first launch)\n");
+            Log("\nLaunching browser...\n" +
+                "It may take some time on the first launch, because it will need to download a Chrome executable (~450mb).\n" +
+                "If this process takes too much time, ensure you have good internet connection (timeout = 15 minutes).\n");
 
             PrepareDirectories();
 
@@ -324,7 +326,7 @@ namespace CharacterAI
                 Headless = true,
                 UserDataDir = $"{CD}{SC}puppeteer-user",
                 ExecutablePath = execPath,
-                Timeout = 120000
+                Timeout = 900_000 // 15 minutes
             });
 
             Log("Chrome - ");
