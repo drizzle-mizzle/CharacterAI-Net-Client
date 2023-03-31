@@ -99,8 +99,8 @@ namespace CharacterAI
         // Get info about character
         public async Task<Character> GetInfoAsync(string? characterId = null)
         {
-            string url = $"https://beta.character.ai/chat/character/info/";
-            var data = new Dictionary<string, string>() { { "external_id", characterId ?? CurrentCharacter.Id! } };
+            string url = "https://beta.character.ai/chat/character/info/";
+            var data = new Dictionary<string, string> { { "external_id", characterId ?? CurrentCharacter.Id! } };
             var response = await RequestPost(url, data);
 
             dynamic? character = null;
@@ -272,7 +272,7 @@ namespace CharacterAI
 
                 if (!File.Exists(responsePath)) return new PuppeteerResponse(null, false);
 
-                var content = File.ReadAllText(responsePath);
+                var content = await File.ReadAllTextAsync(responsePath);
                 if (string.IsNullOrEmpty(content)) return new PuppeteerResponse(null, false); ;
 
                 Directory.Delete(downloadPath, true);
