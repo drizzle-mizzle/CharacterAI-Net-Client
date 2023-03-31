@@ -12,13 +12,13 @@ namespace CharacterAI
         private IBrowser _browser = null!;
         private readonly string? _userToken;
         private Character _currentCharacter = new();
-
         private readonly List<string> _chatsList = new();
         private readonly List<string> _requestQueue = new();
 
         public Character CurrentCharacter { get => _currentCharacter; }
         public List<string> Chats { get => _chatsList; }
 
+        public string EXEC_PATH = null!;
 
         public Integration(string userToken)
             => _userToken = userToken;
@@ -316,16 +316,21 @@ namespace CharacterAI
 
             using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = CHROME_PATH });
             await browserFetcher.DownloadAsync();
-            
-            string execPath = $"{Directory.GetDirectories(CHROME_PATH).First()}{SC}chrome-win{SC}chrome.exe";
 
-            KillChromes(execPath);
+            string chromeOsPath = Directory.GetDirectories(CHROME_PATH).First(); // Windows-xxx or Linux-xxx
+            string chromeMainFolder = Directory.GetDirectories(chromeOsPath).First(); // chrome-win or chrome-linux
+            bool isWindows = chromeMainFolder.Split("-").Last() == "win";
+
+            EXEC_PATH = $"{chromeMainFolder}{SC}chrome";
+            if (isWindows) EXEC_PATH += ".exe";
+
+            KillChromes(EXEC_PATH);
 
             _browser = await Puppeteer.LaunchAsync(new ()
             {
                 Headless = true,
                 UserDataDir = $"{CD}{SC}puppeteer-user",
-                ExecutablePath = execPath,
+                ExecutablePath = EXEC_PATH,
                 Timeout = 900_000 // 15 minutes
             });
 
@@ -333,7 +338,7 @@ namespace CharacterAI
             Success("Running");
         }
 
-        private static void KillChromes(string execPath)
+        public static void KillChromes(string execPath)
         {
             var runningProcesses = Process.GetProcesses();
             int killedCount = 0;
