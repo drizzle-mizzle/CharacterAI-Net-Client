@@ -12,7 +12,9 @@ namespace CharacterAI
         private IBrowser _browser = null!;
         private readonly string? _userToken;
         private Character _currentCharacter = new();
+
         private readonly List<string> _chatsList = new();
+        private readonly List<string> _requestQueue = new();
 
         public Character CurrentCharacter { get => _currentCharacter; }
         public List<string> Chats { get => _chatsList; }
@@ -88,7 +90,7 @@ namespace CharacterAI
                 contentDynamic.seen_msg_ids = new ulong[] { (ulong)primaryMsgId };
             }
 
-            string url = "https://beta.character.ai/chat/streaming/";            
+            string url = "https://beta.character.ai/chat/streaming/";
             var response = await RequestForCall(url, contentDynamic);
 
             return new CharacterResponse(response);
@@ -230,22 +232,32 @@ namespace CharacterAI
         // YES, THAT IS THE ONLY WAY IT CAN WORK RIGHT NOW
         private async Task<PuppeteerResponse?> RequestForCall(string url, dynamic data)
         {
-            string savesPath = $"{CD}{SC}saves{SC}";
+            string requestId = new Random().Next(10000).ToString();
+            string downloadPath = $"{CD}{SC}puppeteer-temps{SC}{requestId}";
+
+            // Puppeteer have some problems with downloads management,
+            // therefore I've decided to implement some kind of a scheduled tasks list.
+            // It's a bit ugly, but it works D:
+            _requestQueue.Add(requestId);
+            for (int i = 0; i < 15; i++)
+                if (_requestQueue.First() == requestId) break;
+                else await Task.Delay(2000);
+
+            if (Directory.Exists(downloadPath)) Directory.Delete(downloadPath, true);
+
+            Directory.CreateDirectory(downloadPath);
 
             var page = await _browser.NewPageAsync();
             await page.SetRequestInterceptionAsync(true);
-            await page.Client.SendAsync("Page.setDownloadBehavior", new
-            {
-                behavior = "allow",
-                downloadPath = savesPath
-            });
+            await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", downloadPath });
+
             page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post);
 
             try { await page.GoToAsync(url); } // it will always throw an exception
             catch (NavigationException)
             {
                 // "download" is a temporary file name where response content is saved
-                string responsePath = $"{savesPath}{SC}download";
+                string responsePath = $"{downloadPath}{SC}download";
 
                 // Wait 30 seconds for a response to download
                 for (int i = 0; i < 15; i++)
@@ -254,14 +266,16 @@ namespace CharacterAI
 
                     if (File.Exists(responsePath)) break;
                 }
-                await page.CloseAsync();
 
-                if (!File.Exists(responsePath)) return new PuppeteerResponse(null, false); ;
+                await page.CloseAsync();
+                _requestQueue.Remove(requestId);
+
+                if (!File.Exists(responsePath)) return new PuppeteerResponse(null, false);
 
                 var content = File.ReadAllText(responsePath);
                 if (string.IsNullOrEmpty(content)) return new PuppeteerResponse(null, false); ;
 
-                File.Delete(responsePath);
+                Directory.Delete(downloadPath, true);
 
                 return new PuppeteerResponse(content, true);
             }
@@ -338,13 +352,11 @@ namespace CharacterAI
 
         private static void PrepareDirectories()
         {
-            string savesPath = $"{CD}{SC}puppeteer-downloads";
             string userPath = $"{CD}{SC}puppeteer-user";
+            string tempsPath = $"{CD}{SC}puppeteer-temps";
 
             if (!Directory.Exists(userPath)) Directory.CreateDirectory(userPath);
-            if (Directory.Exists(savesPath)) Directory.Delete(savesPath, true);
-
-            Directory.CreateDirectory(savesPath);
+            if (!Directory.Exists(tempsPath)) Directory.CreateDirectory(tempsPath);
         }
     }
 }
