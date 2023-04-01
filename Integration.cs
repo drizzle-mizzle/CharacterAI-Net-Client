@@ -198,7 +198,10 @@ namespace CharacterAI
         private async Task<PuppeteerResponse> RequestGet(string url)
         {
             if (_browser is null)
-                throw new Exception("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+            {
+                Failure("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+                return new PuppeteerResponse(null, false);
+            }
 
             var page = await _browser.NewPageAsync();
             await page.SetRequestInterceptionAsync(true);
@@ -215,7 +218,10 @@ namespace CharacterAI
         private async Task<PuppeteerResponse> RequestPost(string url, dynamic? data = null)
         {
             if (_browser is null)
-                throw new Exception("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+            {
+                Failure("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+                return new PuppeteerResponse(null, false);
+            }
 
             var page = await _browser.NewPageAsync();
             await page.SetRequestInterceptionAsync(true);
@@ -232,6 +238,12 @@ namespace CharacterAI
         // YES, THAT IS THE ONLY WAY IT CAN WORK RIGHT NOW
         private async Task<PuppeteerResponse?> RequestForCall(string url, dynamic data)
         {
+            if (_browser is null)
+            {
+                Failure("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+                return new PuppeteerResponse(null, false);
+            }
+
             string requestId = new Random().Next(10000).ToString();
             string downloadPath = $"{CD}{SC}puppeteer-temps{SC}{requestId}";
 
@@ -308,48 +320,51 @@ namespace CharacterAI
 
         public async Task LaunchChromeAsync()
         {
-            Log("\nLaunching browser...\n" +
-                "It may take some time on the first launch, because it will need to download a Chrome executable (~450mb).\n" +
-                "If this process takes too much time, ensure you have good internet connection (timeout = 15 minutes).\n");
-
             try
             {
                 PrepareDirectories();
+                EXEC_PATH = await TryToDownloadBrowser();
 
-                using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = CHROME_PATH });
-                await browserFetcher.DownloadAsync();
-
-                string chromeOsPath = Directory.GetDirectories(CHROME_PATH).First(); // Windows-xxx or Linux-xxx
-                string chromeMainFolder = Directory.GetDirectories(chromeOsPath).First(); // chrome-win or chrome-linux
-                bool isWindows = chromeMainFolder.Split("-").Last() == "win";
-
-                EXEC_PATH = $"{chromeMainFolder}{SC}chrome";
-                if (isWindows) EXEC_PATH += ".exe";
-
+                // Stop all other puppeteer-chrome instances
                 KillChromes(EXEC_PATH);
 
+                Log("\nLaunching browser... ");
                 _browser = await Puppeteer.LaunchAsync(new()
                 {
                     Headless = true,
                     UserDataDir = $"{CD}{SC}puppeteer-user",
                     ExecutablePath = EXEC_PATH,
-                    Timeout = 900_000 // 15 minutes
+                    Timeout = 1_200_000 // 15 minutes
                 });
-
-                Log("Chrome - ");
-                Success("Running");
+                Success("OK");
             }
             catch (Exception e)
             {
                 Failure(e.ToString());
-                throw;
             }
+        }
+
+        private static async Task<string> TryToDownloadBrowser()
+        {
+            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = CHROME_PATH });
+            var revision = await browserFetcher.GetRevisionInfoAsync();
+
+            if (!revision.Local)
+            {
+                Log("\nIt may take some time on the first launch, because it will need to download a Chrome executable (~450mb).\n" +
+                      "If this process takes too much time, ensure you have a good internet connection (timeout = 20 minutes).\n");
+
+                Log("\nDownloading browser... ");
+                await browserFetcher.DownloadAsync();
+                Success("OK");
+            }
+
+            return revision.ExecutablePath;
         }
 
         public static void KillChromes(string execPath)
         {
             var runningProcesses = Process.GetProcesses();
-            int killedCount = 0;
 
             foreach (var process in runningProcesses)
             {
@@ -357,11 +372,7 @@ namespace CharacterAI
                                          process.MainModule != null &&
                                          process.MainModule.FileName == execPath;
 
-                if (isPuppeteerChrome)
-                {
-                    process.Kill();
-                    killedCount++;
-                }
+                if (isPuppeteerChrome) process.Kill();
             }
         }
 
