@@ -7,7 +7,7 @@ An unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service.
 
 <sup><b>
 If you found this project useful, the best way to thank me is to simply leave a star ⭐<br>
-Also, check out my [CharacterAI-Discord-Bot](https://github.com/drizzle-mizzle/CharacterAI-Discord-Bot), the parent-project of this repository.</b></sup>
+Also, check out my [CharacterAI Discord Bot](https://github.com/drizzle-mizzle/CharacterAI-Discord-Bot), the parent-project of this repository.</b></sup>
 </div>
 
 ## 📓 Documentation
