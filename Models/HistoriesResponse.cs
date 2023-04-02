@@ -8,8 +8,8 @@ namespace CharacterAI.Models
     {
         public List<Character>? Histories { get; }
         public string? ErrorReason { get; }
-        public bool IsSuccessful { get => ErrorReason is null; }
-        public bool IsEmpty { get => Histories is null; }
+        public bool IsSuccessful => ErrorReason is null;
+        public bool IsEmpty => Histories is null;
 
         public HistoriesResponse(PuppeteerResponse httpResponse)
         {
