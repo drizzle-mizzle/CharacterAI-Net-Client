@@ -9,7 +9,7 @@ namespace CharacterAI.Models
         public List<Character> Characters { get; } = new();
         public string? ErrorReason { get; }
         public bool IsSuccessful { get => ErrorReason is null; }
-        public bool IsEmpty { get => Characters.Count > 0; }
+        public bool IsEmpty { get => !Characters.Any(); }
 
         public SearchResponse(PuppeteerResponse response)
         {
