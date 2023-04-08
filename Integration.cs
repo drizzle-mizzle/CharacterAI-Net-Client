@@ -334,6 +334,7 @@ namespace CharacterAI
                     Headless = true,
                     UserDataDir = $"{CD}{SC}puppeteer-user",
                     ExecutablePath = EXEC_PATH,
+                    Args = new []{"--no-sandbox", "--disable-setuid-sandbox"},
                     Timeout = 1_200_000 // 15 minutes
                 });
                 Success("OK");
