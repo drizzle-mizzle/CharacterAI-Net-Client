@@ -8,7 +8,7 @@ namespace CharacterAI.Models
         {
             if (character is null) return;
 
-            bool noPic = string.IsNullOrEmpty(character.avatar_file_name);
+            bool noPic = string.IsNullOrEmpty($"{character.avatar_file_name}");
 
             Id = character.external_id;
             IsCopyable = character.copyable ?? true;
