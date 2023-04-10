@@ -13,7 +13,7 @@ namespace CharacterAI
         private readonly string? _userToken;
         private Character _currentCharacter = new();
         private readonly List<string> _chatsList = new();
-        private readonly List<string> _requestQueue = new();
+        private readonly List<int> _requestQueue = new();
 
         public Character CurrentCharacter => _currentCharacter;
         public List<string> Chats => _chatsList;
@@ -23,7 +23,12 @@ namespace CharacterAI
         public Integration(string userToken)
             => _userToken = userToken;
 
-        // Use it to quickly setup integration with a character and get-last/create-new chat with it.
+        /// <summary>
+        /// Use it to quickly setup integration with a character and get-last/create-new chat with it.
+        /// </summary>
+        /// <param name="characterId"></param>
+        /// <param name="startWithNewChat"></param>
+        /// <returns></returns>
         public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
         {
             Log($"\nStarting character setup...\n  (Character ID: {characterId ?? _currentCharacter.Id})\n");
@@ -58,7 +63,10 @@ namespace CharacterAI
             return new SetupResult(true);
         }
 
-        // Short version of SetupAsync for a current character
+        /// <summary>
+        /// Short version of SetupAsync for a current character
+        /// </summary>
+        /// <returns></returns>
         public async Task<SetupResult> Reset()
         {
             _chatsList.Clear();
@@ -71,7 +79,15 @@ namespace CharacterAI
             return new SetupResult(true);
         }
 
-        // Send message and get reply
+        /// <summary>
+        /// Send message and get reply
+        /// </summary>
+        /// <param name="message"></param>
+        /// <param name="imagePath"></param>
+        /// <param name="historyId"></param>
+        /// <param name="primaryMsgId"></param>
+        /// <param name="parentMsgId"></param>
+        /// <returns></returns>
         public async Task<CharacterResponse> CallCharacterAsync(string message = "", string? imagePath = null, string? historyId = null, ulong? primaryMsgId = null, ulong? parentMsgId = null)
         {
             var contentDynamic = BasicCallContent(_currentCharacter, message, imagePath, historyId ?? _chatsList.First());
@@ -96,7 +112,11 @@ namespace CharacterAI
             return new CharacterResponse(response);
         }
 
-        // Get info about character
+        /// <summary>
+        /// Get info about character
+        /// </summary>
+        /// <param name="characterId"></param>
+        /// <returns></returns>
         public async Task<Character> GetInfoAsync(string? characterId = null)
         {
             string url = "https://beta.character.ai/chat/character/info/";
@@ -128,9 +148,11 @@ namespace CharacterAI
                 await CreateNewChatAsync(characterId);
         }
 
-        // Create new chat with a character
-        // returns chat history id if successful
-        // returns null if fails
+        /// <summary>
+        /// Create new chat with a character
+        /// </summary>
+        /// <param name="characterId"></param>
+        /// <returns>returns chat_history_id if successful; null if fails</returns>
         public async Task<string?> CreateNewChatAsync(string? characterId = null)
         {
             string url = "https://beta.character.ai/chat/history/create/";
@@ -176,17 +198,35 @@ namespace CharacterAI
             return new SearchResponse(response);
         }
 
-        // Upload image on a server. Use it to attach image to your reply.
-        // returns image path if successful
-        // returns null if fails
-        public async Task<string?> UploadImageAsync(byte[] img)
+        /// <summary>
+        /// CURRENTLY NOT WORKING
+        /// Upload image on a server. Use it to attach image to your reply.
+        /// </summary>
+        /// <param name="img">byte-array image</param>
+        /// <param name="fileName"></param>
+        /// <returns>
+        /// image path if successful; null if fails
+        /// </returns>
+        public async Task<string?> UploadImageAsync(byte[] img, string fileName = "image.jpeg")
         {
-            var image = new ByteArrayContent(img);
-            image.Headers.ContentType = MediaTypeHeaderValue.Parse("image/jpeg");
-            var requestContent = new MultipartFormDataContent { { image, "\"image\"", $"\"image.jpg\"" } };
+            return null;
 
             string url = "https://beta.character.ai/chat/upload-image/";
-            var response = await RequestPost(url, requestContent);
+
+            if (!fileName.Contains('.')) fileName += ".jpeg";
+            string ext = fileName.Split(".").Last();
+
+            var content = new ByteArrayContent(img);
+            content.Headers.ContentType = new MediaTypeHeaderValue($"image/{ext}");
+
+            string boundary = "----RandomBoundaryString" + new Random().Next(1024).ToString();
+            var formData = new MultipartFormDataContent(boundary) { { content, "image", fileName } };
+
+            string data = await formData.ReadAsStringAsync();
+            string contentType = $"multipart/form-data; boundary={boundary}";
+            WriteToLogFile(data);
+
+            var response = await RequestPost(url, data, contentType);
 
             if (response.IsSuccessful)
                 return JsonConvert.DeserializeObject<dynamic>(response.Content!)?.value;
@@ -194,6 +234,7 @@ namespace CharacterAI
             Failure(response: response);
             return null;
         }
+
 
         private async Task<PuppeteerResponse> RequestGet(string url)
         {
@@ -206,7 +247,7 @@ namespace CharacterAI
             var page = await _browser.NewPageAsync();
             await page.SetRequestInterceptionAsync(true);
 
-            page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get);
+            page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get, "application/json");
 
             var response = await page.GoToAsync(url);
             var content = await response.TextAsync();
@@ -215,7 +256,7 @@ namespace CharacterAI
             return new PuppeteerResponse(content, response.Ok);
         }
 
-        private async Task<PuppeteerResponse> RequestPost(string url, dynamic? data = null)
+        private async Task<PuppeteerResponse> RequestPost(string url, dynamic? data = null, string contentType = "application/json")
         {
             if (_browser is null)
             {
@@ -226,7 +267,7 @@ namespace CharacterAI
             var page = await _browser.NewPageAsync();
             await page.SetRequestInterceptionAsync(true);
 
-            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post);
+            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, contentType);
 
             var response = await page.GoToAsync(url);
             var content = await response.TextAsync();
@@ -244,17 +285,22 @@ namespace CharacterAI
                 return new PuppeteerResponse(null, false);
             }
 
-            string requestId = new Random().Next(10000).ToString();
-            string downloadPath = $"{CD}{SC}puppeteer-temps{SC}{requestId}";
+            int requestId;
+            while(true)
+            {
+                requestId = new Random().Next(10000);
+                if (!_requestQueue.Contains(requestId)) break;
+            }
 
             // Puppeteer have some problems with downloads management,
             // therefore I've decided to implement some kind of a scheduled tasks list.
             // It's a bit ugly, but it works D:
             _requestQueue.Add(requestId);
-            for (int i = 0; i < 15; i++)
+            for (int i = 0; i < 30; i++)
                 if (_requestQueue.First() == requestId) break;
                 else await Task.Delay(2000);
 
+            string downloadPath = $"{CD}{slash}puppeteer-temps{slash}{requestId}";
             if (Directory.Exists(downloadPath)) Directory.Delete(downloadPath, true);
 
             Directory.CreateDirectory(downloadPath);
@@ -263,13 +309,13 @@ namespace CharacterAI
             await page.SetRequestInterceptionAsync(true);
             await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", downloadPath });
 
-            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post);
+            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json");
 
             try { await page.GoToAsync(url); } // it will always throw an exception
             catch (NavigationException)
             {
                 // "download" is a temporary file name where response content is saved
-                string responsePath = $"{downloadPath}{SC}download";
+                string responsePath = $"{downloadPath}{slash}download";
 
                 // Wait 30 seconds for a response to download
                 for (int i = 0; i < 15; i++)
@@ -296,24 +342,28 @@ namespace CharacterAI
             return new PuppeteerResponse(null, false);
         }
 
-        private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method)
+        private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method, string contentType)
         {
             var r = args.Request;
-            var payload = CreateRequestPayload(method, data);
+            var payload = CreateRequestPayload(method, data, contentType);
 
             await r.ContinueAsync(payload);
         }
 
-        private Payload CreateRequestPayload(HttpMethod method, dynamic? data)
+        private Payload CreateRequestPayload(HttpMethod method, dynamic? data, string contentType)
         {
             var headers = new Dictionary<string, string> {
                 { "authorization", $"Token {_userToken}" },
-                { "accept", @"application/json, text/plain, */*" },
+                { "accept", "application/json, text/plain, */*" },
                 { "accept-encoding", "gzip, deflate, br" },
-                { "content-type", "application/json" },
+                { "content-type", contentType },
                 { "user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"}
             };
-            string? serializedData = data is null ? null : JsonConvert.SerializeObject(data);
+            string? serializedData;
+            if (data is string || data is null)
+                serializedData = data;
+            else
+                serializedData = JsonConvert.SerializeObject(data);
 
             return new Payload() { Method = method, Headers = headers, PostData = serializedData };
         }
@@ -332,9 +382,9 @@ namespace CharacterAI
                 _browser = await Puppeteer.LaunchAsync(new()
                 {
                     Headless = true,
-                    UserDataDir = $"{CD}{SC}puppeteer-user",
+                    UserDataDir = $"{CD}{slash}puppeteer-user",
                     ExecutablePath = EXEC_PATH,
-                    Args = new []{"--no-sandbox", "--disable-setuid-sandbox"},
+                    Args = new [] { "--no-sandbox", "--disable-setuid-sandbox" },
                     Timeout = 1_200_000 // 15 minutes
                 });
                 Success("OK");
@@ -379,8 +429,8 @@ namespace CharacterAI
 
         private static void PrepareDirectories()
         {
-            string userPath = $"{CD}{SC}puppeteer-user";
-            string tempsPath = $"{CD}{SC}puppeteer-temps";
+            string userPath = $"{CD}{slash}puppeteer-user";
+            string tempsPath = $"{CD}{slash}puppeteer-temps";
 
             if (!Directory.Exists(userPath)) Directory.CreateDirectory(userPath);
             if (!Directory.Exists(tempsPath)) Directory.CreateDirectory(tempsPath);

@@ -8,6 +8,8 @@ namespace CharacterAI.Models
         {
             if (character is null) return;
 
+            bool noPic = string.IsNullOrEmpty(character.avatar_file_name);
+
             Id = character.external_id;
             IsCopyable = character.copyable ?? true;
             Name = character.participant__name;
@@ -15,8 +17,8 @@ namespace CharacterAI.Models
             Greeting = character.greeting;
             Description = character.description;
             Author = character.user__username;
-            AvatarUrlFull = $"https://characterai.io/i/400/static/avatars/{character.avatar_file_name}";
-            AvatarUrlMini = $"https://characterai.io/i/80/static/avatars/{character.avatar_file_name}";
+            AvatarUrlFull = noPic ? null : $"https://characterai.io/i/400/static/avatars/{character.avatar_file_name}";
+            AvatarUrlMini = noPic ? null : $"https://characterai.io/i/80/static/avatars/{character.avatar_file_name}";
             IsPublic = character.visibility is null || character.visibility == "PUBLIC";
             Interactions = character.participant__num_interactions;
             ImageGenEnabled = character.img_gen_enabled;

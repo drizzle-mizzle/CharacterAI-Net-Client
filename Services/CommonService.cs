@@ -7,9 +7,9 @@ namespace CharacterAI.Services
     {
 
         internal static string CD = Directory.GetCurrentDirectory();
-        internal static char SC = Path.DirectorySeparatorChar;
+        internal static char slash = Path.DirectorySeparatorChar;
 
-        internal static string CHROME_PATH = $"{CD}{SC}puppeteer-chrome";
+        internal static string CHROME_PATH = $"{CD}{slash}puppeteer-chrome";
 
         // Log and return true
         internal static bool Success(string logText = "")
@@ -48,6 +48,20 @@ namespace CharacterAI.Services
             Console.ForegroundColor = color;
             Console.Write(text);
             Console.ResetColor();
+        }
+
+        internal static void WriteToLogFile(string text)
+        {
+            try
+            {
+                string fileName = $"{CD}{slash}log.txt";
+
+                if (!File.Exists(fileName))
+                    File.Create(fileName);
+
+                File.AppendAllText(fileName, text + "\n\n------------------------\n\n");
+            }
+            catch { Failure("Woops."); }
         }
 
         internal static dynamic BasicCallContent(Character charInfo, string msg, string? imgPath, string historyId)
