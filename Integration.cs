@@ -368,12 +368,12 @@ namespace CharacterAI
             return new Payload() { Method = method, Headers = headers, PostData = serializedData };
         }
 
-        public async Task LaunchChromeAsync()
+        public async Task LaunchChromeAsync(string? customChromeDir = null)
         {
             try
             {
                 PrepareDirectories();
-                EXEC_PATH = await TryToDownloadBrowser();
+                EXEC_PATH = await TryToDownloadBrowser(customChromeDir);
 
                 // Stop all other puppeteer-chrome instances
                 KillChromes(EXEC_PATH);
@@ -395,9 +395,10 @@ namespace CharacterAI
             }
         }
 
-        private static async Task<string> TryToDownloadBrowser()
+        private static async Task<string> TryToDownloadBrowser(string? customPath)
         {
-            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = CHROME_PATH });
+            string path = string.IsNullOrWhiteSpace(customPath) ? CHROME_PATH : customPath;
+            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path });
             var revision = await browserFetcher.GetRevisionInfoAsync();
 
             if (!revision.Local)
