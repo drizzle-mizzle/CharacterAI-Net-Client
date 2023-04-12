@@ -2,18 +2,21 @@
 using CharacterAI.Services;
 using Newtonsoft.Json;
 using System.Net.Http.Headers;
-using PuppeteerSharp;
+using PuppeteerExtraSharp;
 using System.Diagnostics;
+using PuppeteerSharp;
+using PuppeteerExtraSharp.Plugins.ExtraStealth;
+using PuppeteerExtraSharp.Plugins.ExtraStealth.Evasions;
 
 namespace CharacterAI
 {
     public class Integration : CommonService
     {
+        private IPage _chatPage = null!;
         private IBrowser _browser = null!;
-        private readonly string? _userToken;
         private Character _currentCharacter = new();
+        private readonly string? _userToken;
         private readonly List<string> _chatsList = new();
-        private readonly List<int> _requestQueue = new();
 
         public Character CurrentCharacter => _currentCharacter;
         public List<string> Chats => _chatsList;
@@ -26,9 +29,7 @@ namespace CharacterAI
         /// <summary>
         /// Use it to quickly setup integration with a character and get-last/create-new chat with it.
         /// </summary>
-        /// <param name="characterId"></param>
-        /// <param name="startWithNewChat"></param>
-        /// <returns></returns>
+        /// <returns>SetupResult</returns>
         public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
         {
             Log($"\nStarting character setup...\n  (Character ID: {characterId ?? _currentCharacter.Id})\n");
@@ -66,7 +67,7 @@ namespace CharacterAI
         /// <summary>
         /// Short version of SetupAsync for a current character
         /// </summary>
-        /// <returns></returns>
+        /// <returns>SetupResult</returns>
         public async Task<SetupResult> Reset()
         {
             _chatsList.Clear();
@@ -82,12 +83,7 @@ namespace CharacterAI
         /// <summary>
         /// Send message and get reply
         /// </summary>
-        /// <param name="message"></param>
-        /// <param name="imagePath"></param>
-        /// <param name="historyId"></param>
-        /// <param name="primaryMsgId"></param>
-        /// <param name="parentMsgId"></param>
-        /// <returns></returns>
+        /// <returns>CharacterResponse</returns>
         public async Task<CharacterResponse> CallCharacterAsync(string message = "", string? imagePath = null, string? historyId = null, ulong? primaryMsgId = null, ulong? parentMsgId = null)
         {
             var contentDynamic = BasicCallContent(_currentCharacter, message, imagePath, historyId ?? _chatsList.First());
@@ -115,8 +111,7 @@ namespace CharacterAI
         /// <summary>
         /// Get info about character
         /// </summary>
-        /// <param name="characterId"></param>
-        /// <returns></returns>
+        /// <returns>Character</returns>
         public async Task<Character> GetInfoAsync(string? characterId = null)
         {
             string url = "https://beta.character.ai/chat/character/info/";
@@ -128,7 +123,7 @@ namespace CharacterAI
             if (response.IsSuccessful)
                 character = JsonConvert.DeserializeObject<dynamic>(response.Content!)?.character;
             else
-                Failure(response: response);
+                Failure(response: response.Content);
 
             return new Character(character);
         }
@@ -151,7 +146,6 @@ namespace CharacterAI
         /// <summary>
         /// Create new chat with a character
         /// </summary>
-        /// <param name="characterId"></param>
         /// <returns>returns chat_history_id if successful; null if fails</returns>
         public async Task<string?> CreateNewChatAsync(string? characterId = null)
         {
@@ -163,13 +157,13 @@ namespace CharacterAI
             var response = await RequestPost(url, data);
             if (!response.IsSuccessful)
             {
-                Failure(response: response);
+                Failure(response: response.Content);
                 return null;
             }
 
             var externalId = JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id;
             if (externalId is null)
-                Failure("Something went wrong...", response: response);
+                Failure("Something went wrong...", response: response.Content);
 
             return externalId!;
         }
@@ -202,8 +196,6 @@ namespace CharacterAI
         /// CURRENTLY NOT WORKING
         /// Upload image on a server. Use it to attach image to your reply.
         /// </summary>
-        /// <param name="img">byte-array image</param>
-        /// <param name="fileName"></param>
         /// <returns>
         /// image path if successful; null if fails
         /// </returns>
@@ -231,7 +223,7 @@ namespace CharacterAI
             if (response.IsSuccessful)
                 return JsonConvert.DeserializeObject<dynamic>(response.Content!)?.value;
 
-            Failure(response: response);
+            Failure(response: response.Content);
             return null;
         }
 
@@ -277,69 +269,36 @@ namespace CharacterAI
         }
 
         // YES, THAT IS THE ONLY WAY IT CAN WORK RIGHT NOW
-        private async Task<PuppeteerResponse?> RequestForCall(string url, dynamic data)
+        private async Task<string?> RequestForCall(string url, dynamic data)
         {
             if (_browser is null)
             {
                 Failure("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
-                return new PuppeteerResponse(null, false);
+                return null;
             }
 
-            int requestId;
-            while(true)
+            string jsFunc = $"async () => await fetch('{url}', {{ " +
+            "    method: 'POST', " +
+            "    headers: " +
+            "    { " +
+            "        'accept': 'application/json, text/plain, */*', " +
+            "        'accept-encoding': 'gzip, deflate, br'," +
+            $"       'authorization': 'Token {_userToken}', " +
+            $"       'content-type': 'application/json', " +
+            "        'origin': 'https://beta.character.ai/' " +
+            "    }, " +
+            $"   body: JSON.stringify({JsonConvert.SerializeObject(data)}) " +
+            "}).then((response) => response.text())";
+
+            string? content = null;
+            try
             {
-                requestId = new Random().Next(10000);
-                if (!_requestQueue.Contains(requestId)) break;
+                var response = await _chatPage.EvaluateFunctionAsync(jsFunc);
+                content = response.ToString();
             }
+            catch (Exception e) { Failure(e: e); }
 
-            // Puppeteer have some problems with downloads management,
-            // therefore I've decided to implement some kind of a scheduled tasks list.
-            // It's a bit ugly, but it works D:
-            _requestQueue.Add(requestId);
-            for (int i = 0; i < 30; i++)
-                if (_requestQueue.First() == requestId) break;
-                else await Task.Delay(2000);
-
-            string downloadPath = $"{CD}{slash}puppeteer-temps{slash}{requestId}";
-            if (Directory.Exists(downloadPath)) Directory.Delete(downloadPath, true);
-
-            Directory.CreateDirectory(downloadPath);
-
-            var page = await _browser.NewPageAsync();
-            await page.SetRequestInterceptionAsync(true);
-            await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", downloadPath });
-
-            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json");
-
-            try { await page.GoToAsync(url); } // it will always throw an exception
-            catch (NavigationException)
-            {
-                // "download" is a temporary file name where response content is saved
-                string responsePath = $"{downloadPath}{slash}download";
-
-                // Wait 30 seconds for a response to download
-                for (int i = 0; i < 15; i++)
-                {
-                    await Task.Delay(2000);
-
-                    if (File.Exists(responsePath)) break;
-                }
-
-                await page.CloseAsync();
-                _requestQueue.Remove(requestId);
-
-                if (!File.Exists(responsePath)) return new PuppeteerResponse(null, false);
-
-                var content = await File.ReadAllTextAsync(responsePath);
-                if (string.IsNullOrEmpty(content)) return new PuppeteerResponse(null, false); ;
-
-                Directory.Delete(downloadPath, true);
-
-                return new PuppeteerResponse(content, true);
-            }
-            _ = page.CloseAsync();
-
-            return new PuppeteerResponse(null, false);
+            return content;
         }
 
         private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method, string contentType)
@@ -357,7 +316,7 @@ namespace CharacterAI
                 { "accept", "application/json, text/plain, */*" },
                 { "accept-encoding", "gzip, deflate, br" },
                 { "content-type", contentType },
-                { "user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"}
+                { "user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36" }
             };
             string? serializedData;
             if (data is string || data is null)
@@ -377,16 +336,31 @@ namespace CharacterAI
 
                 // Stop all other puppeteer-chrome instances
                 KillChromes(EXEC_PATH);
+                Log("\n(If it hangs on for some reason, just try to relaunch the application)\nLaunching browser... ");
 
-                Log("\nLaunching browser... ");
-                _browser = await Puppeteer.LaunchAsync(new()
+                var pex = new PuppeteerExtra();
+                var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(12));
+
+                _browser = await pex.Use(stealthPlugin).LaunchAsync(new()
                 {
                     Headless = true,
                     UserDataDir = $"{CD}{slash}puppeteer-user",
                     ExecutablePath = EXEC_PATH,
-                    Args = new [] { "--no-sandbox", "--disable-setuid-sandbox" },
+                    Args = new []
+                    {
+                        "--no-default-browser-check", "--no-sandbox", "--no-service-autorun",
+                        "--mute-audio", "--ignore-certificate-errors",
+                        "--disable-gpu", "--disable-infobars", "--disable-dev-shm-usage",
+                        "--disable-setuid-sandbox", "--disable-blink-features=AutomationControlled",
+                        "--disable-accelerated-2d-canvas", "--disable-features=ChromeWhatsNewUI",
+                        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+                    },
                     Timeout = 1_200_000 // 15 minutes
                 });
+
+                _chatPage = await _browser.NewPageAsync();
+                await _chatPage.GoToAsync($"https://beta.character.ai/");
+
                 Success("OK");
             }
             catch (Exception e)

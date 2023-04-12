@@ -30,7 +30,7 @@ namespace CharacterAI.Models
         {
             if (!response.IsSuccessful)
             {
-                Failure(response: response);
+                Failure(response: response.Content);
                 return "Something went wrong";
             }
 

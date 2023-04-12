@@ -20,25 +20,16 @@ namespace CharacterAI.Services
         }
 
         // Log and return false
-        internal static bool Failure(string logText = "", PuppeteerResponse? response = null)
+        internal static bool Failure(string? logText = null, string? response = null, Exception? e = null)
         {
-            if (logText != "")
-                Log(logText + "\n", ConsoleColor.Red);
+            if (logText is not null)
+                Log($"{logText}\n", ConsoleColor.Red);
 
             if (response is not null)
-            {
-                //var request = response.OriginalResponse.Request!;
-                //var rPayload = response.OriginalRequestPayload;
+                Log($"Response:\n{response}\n", ConsoleColor.Red);
 
-                //Log(color: ConsoleColor.Red,
-                //    text: $"Error!\n Request failed! ({request.Url})\n  " +
-                //          $"{string.Join("\n  ", rPayload.Headers)}\n" +
-                //          $" Request Content: {(rPayload.PostData == null ? "empty" : $"\n  {rPayload.PostData}" )}\n");
-
-                //Log(color: ConsoleColor.Magenta,
-                //    text: $"\n Response:\n  {string.Join("\n  ", response.OriginalResponse.Headers)}\n" +
-                //          $" Response Content:\n  {response.Content}\n");
-            }
+            if (e is not null)
+                Log($"Exception details:\n{e}\n", ConsoleColor.Red);
 
             return false;
         }
