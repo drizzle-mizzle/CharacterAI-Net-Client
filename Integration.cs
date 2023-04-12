@@ -335,9 +335,10 @@ namespace CharacterAI
                 EXEC_PATH = await TryToDownloadBrowser(customChromeDir);
 
                 // Stop all other puppeteer-chrome instances
-                KillChromes(EXEC_PATH);
-                Log("\n(If it hangs on for some reason, just try to relaunch the application)\nLaunching browser... ");
+                if (string.IsNullOrWhiteSpace(customChromeDir)) // don't wanna mess with it when there's several bots being launched on one chrome executable, so just skip it
+                    KillChromes(EXEC_PATH);
 
+                Log("\n(If it hangs on for some reason, just try to relaunch the application)\nLaunching browser... ");
                 var pex = new PuppeteerExtra();
                 var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(12));
 
@@ -405,10 +406,7 @@ namespace CharacterAI
         private static void PrepareDirectories()
         {
             string userPath = $"{CD}{slash}puppeteer-user";
-            string tempsPath = $"{CD}{slash}puppeteer-temps";
-
             if (!Directory.Exists(userPath)) Directory.CreateDirectory(userPath);
-            if (!Directory.Exists(tempsPath)) Directory.CreateDirectory(tempsPath);
         }
     }
 }
