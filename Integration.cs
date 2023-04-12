@@ -340,7 +340,7 @@ namespace CharacterAI
 
                 Log("\n(If it hangs on for some reason, just try to relaunch the application)\nLaunching browser... ");
                 var pex = new PuppeteerExtra();
-                var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(12));
+                var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(1));
 
                 _browser = await pex.Use(stealthPlugin).LaunchAsync(new()
                 {
@@ -349,18 +349,16 @@ namespace CharacterAI
                     ExecutablePath = EXEC_PATH,
                     Args = new []
                     {
-                        "--no-default-browser-check", "--no-sandbox", "--no-service-autorun",
+                        "--no-default-browser-check", "--no-sandbox", "--disable-setuid-sandbox", "--no-first-run",
+                        "--disable-default-apps", "--disable-features=Translate", "--disable-infobars",
                         "--mute-audio", "--ignore-certificate-errors",
-                        "--disable-gpu", "--disable-infobars", "--disable-dev-shm-usage",
-                        "--disable-setuid-sandbox", "--disable-blink-features=AutomationControlled",
-                        "--disable-accelerated-2d-canvas", "--disable-features=ChromeWhatsNewUI",
                         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
                     },
                     Timeout = 1_200_000 // 15 minutes
                 });
 
                 _chatPage = await _browser.NewPageAsync();
-                await _chatPage.GoToAsync($"https://beta.character.ai/");
+                await _chatPage.GoToAsync($"https://beta.character.ai/search?"); // lightweight page
 
                 Success("OK");
             }
