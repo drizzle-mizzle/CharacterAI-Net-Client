@@ -26,7 +26,7 @@ namespace CharacterAI.Models
 
         private static dynamic ParseCharacterResponse(string? response)
         {
-            if (response is null) return "⚠️ Something went wrong.";
+            if (response is null) return "{WARN_SIGN}️ Something went wrong.";
             
             try
             {
@@ -37,7 +37,7 @@ namespace CharacterAI.Models
             }
             catch (Exception e)
             {
-                string eMsg = "⚠️ Message has been sent successfully, but something went wrong...\n(probably, CharacterAI servers are down, or character reply was filtered and deleted, try again)";
+                string eMsg = "{WARN_SIGN}️ Message has been sent successfully, but something went wrong...\n(probably, CharacterAI servers are down, or character reply was filtered and deleted, try again)";
                 Failure(eMsg, e: e);
 
                 return eMsg;

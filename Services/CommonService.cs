@@ -9,6 +9,7 @@ namespace CharacterAI.Services
         internal static string CD = Directory.GetCurrentDirectory();
         internal static char slash = Path.DirectorySeparatorChar;
 
+        internal static readonly string WARN_SIGN = "\u26A0";
         internal static string CHROME_PATH = $"{CD}{slash}puppeteer-chrome";
 
         // Log and return true
