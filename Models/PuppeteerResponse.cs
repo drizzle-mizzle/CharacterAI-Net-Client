@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,13 +11,15 @@ namespace CharacterAI.Models
     {
         //public IResponse OriginalResponse { get; }
         //public Payload OriginalRequestPayload { get; }
-        public bool IsSuccessful { get; }
         public string? Content { get; }
+        public bool IsSuccessful { get; }
+        public bool InQueue { get; }
 
-        public PuppeteerResponse(string? responseContent, bool status)
+        public PuppeteerResponse(string? responseContent, bool isSuccessful)
         {
-            IsSuccessful = status;
             Content = responseContent;
+            IsSuccessful = isSuccessful;
+            InQueue = Content?.Contains("You are now in line") ?? false;
         }
     }
 }

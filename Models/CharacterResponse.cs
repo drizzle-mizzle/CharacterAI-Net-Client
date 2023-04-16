@@ -11,7 +11,7 @@ namespace CharacterAI.Models
         public string? ErrorReason { get; }
         public bool IsSuccessful => ErrorReason is null;
 
-        public CharacterResponse(string? response)
+        public CharacterResponse(FetchResponse response)
         {
             dynamic responseParsed = ParseCharacterResponse(response);
 
@@ -24,37 +24,59 @@ namespace CharacterAI.Models
             }
         }
 
-        private static dynamic ParseCharacterResponse(string? response)
+        private static dynamic ParseCharacterResponse(FetchResponse response)
         {
-            if (response is null) return $"{WARN_SIGN} Something went wrong.";
+            if (!response.IsSuccessful)
+            {
+                Failure(response.Status, response.Content);
+                return $"{WARN_SIGN} Failed to fetch response.\n(probably, CharacterAI servers are down, try again later)";
+            }
             
             try
             {
-                string[] chunks = response.Split("\n");
-                string finalChunk = chunks.First(c => JsonConvert.DeserializeObject<dynamic>(c)!.is_final_chunk == true);
+                var chunks = response.Content!.Split("\n").ToList();
+                var parsedChunks = chunks.ConvertAll(JsonConvert.DeserializeObject<dynamic>);
+                parsedChunks.Reverse(); // Only last chunks contains "abort" or "final_chunk", so it will be a bit faster to find
+
+                // Check if message was filtered.
+                // Aborted message last chunk will look like: { "abort": true, "error": "No eligible candidates", "last_user_msg_id": 69, "last_user_msg_uuid": "..." }
+                if (parsedChunks.All(c => c?.abort is null))
+                    return parsedChunks.First(c => c?.is_final_chunk == true)!;
+
+                // Return last normal chunk, before filter aborted message
+                var eMsg = $"{WARN_SIGN} Character response was filtered.";
+                var lastMessageChunk = parsedChunks.FirstOrDefault(c => c?.replies is not null);
+                if (lastMessageChunk is null) return eMsg;
                 
-                return JsonConvert.DeserializeObject<dynamic>(finalChunk)!;
+                var lastReply = (GetCharacterReplies(lastMessageChunk?.replies) as List<Reply>)?.FirstOrDefault();
+                var lastWords = lastReply is null ? "" : $" It was cut off on:\n{lastReply.Text}";
+
+                return eMsg + lastWords;
             }
             catch (Exception e)
             {
-                string eMsg = $"{WARN_SIGN} Message has been sent successfully, but something went wrong...\n(probably, CharacterAI servers are down, or character reply was filtered and deleted, try again)";
-                Failure(eMsg, e: e);
+                string eMsg = $"{WARN_SIGN} Something went wrong...\n";
+                Failure($"{response.Status} | {eMsg}", response.Content, e: e);
 
                 return eMsg;
             }
         }
 
-        private static List<Reply> GetCharacterReplies(JArray jReplies)
+        private static List<Reply> GetCharacterReplies(JArray? jReplies)
         {
             var replies = new List<Reply>();
+            if (string.IsNullOrWhiteSpace(jReplies?.ToString())) return replies;
 
             foreach (dynamic reply in jReplies)
             {
+                var replyId = reply?.id;
+                if (replyId is null) continue;
+
                 replies.Add(new Reply
                 {
-                    Id = reply.id,
+                    Id = replyId,
                     Text = reply?.text,
-                    ImageRelPath = reply?.image_rel_path,
+                    ImageRelPath = reply?.image_rel_path
                 });
             }
 

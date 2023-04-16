@@ -7,6 +7,8 @@ using System.Diagnostics;
 using PuppeteerSharp;
 using PuppeteerExtraSharp.Plugins.ExtraStealth;
 using PuppeteerExtraSharp.Plugins.ExtraStealth.Evasions;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using System;
 
 namespace CharacterAI
 {
@@ -60,7 +62,7 @@ namespace CharacterAI
 
             Log("\nCharacterAI - ");
             Success("Ready\n");
-        
+
             return new SetupResult(true);
         }
 
@@ -103,7 +105,7 @@ namespace CharacterAI
             }
 
             string url = "https://beta.character.ai/chat/streaming/";
-            var response = await RequestForCall(url, contentDynamic);
+            var response = await FetchRequestAsync(url, "POST", contentDynamic);
 
             return new CharacterResponse(response);
         }
@@ -118,6 +120,12 @@ namespace CharacterAI
             var data = new Dictionary<string, string> { { "external_id", characterId ?? CurrentCharacter.Id! } };
             var response = await RequestPost(url, data);
 
+            if (response.InQueue)
+            {
+                await TryToLeaveQueue(false);
+                response = await RequestPost(url, data);
+            }
+
             dynamic? character = null;
 
             if (response.IsSuccessful)
@@ -131,12 +139,18 @@ namespace CharacterAI
         public async Task<string?> GetLastChatAsync(string? characterId = null)
         {
             string url = "https://beta.character.ai/chat/history/continue/";
-            
+
             var data = new FormUrlEncodedContent(new Dictionary<string, string> {
                 { "character_external_id", characterId ?? CurrentCharacter.Id! }
             });
 
             var response = await RequestPost(url, data);
+
+            if (response.InQueue)
+            {
+                await TryToLeaveQueue(false);
+                response = await RequestPost(url, data);
+            }
 
             return response.IsSuccessful ?
                 JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id :
@@ -155,6 +169,13 @@ namespace CharacterAI
             };
 
             var response = await RequestPost(url, data);
+
+            if (response.InQueue)
+            {
+                await TryToLeaveQueue(false);
+                response = await RequestPost(url, data);
+            }
+
             if (!response.IsSuccessful)
             {
                 Failure(response: response.Content);
@@ -188,6 +209,11 @@ namespace CharacterAI
         {
             string url = $"https://beta.character.ai/chat/characters/search/?query={query}";
             var response = await RequestGet(url);
+            if (response.InQueue)
+            {
+                await TryToLeaveQueue(false);
+                response = await RequestGet(url);
+            }
 
             return new SearchResponse(response);
         }
@@ -220,6 +246,12 @@ namespace CharacterAI
 
             var response = await RequestPost(url, data, contentType);
 
+            if (response.InQueue)
+            {
+                await TryToLeaveQueue(false);
+                response = await RequestPost(url, data, contentType);
+            }
+
             if (response.IsSuccessful)
                 return JsonConvert.DeserializeObject<dynamic>(response.Content!)?.value;
 
@@ -232,7 +264,7 @@ namespace CharacterAI
         {
             if (_browser is null)
             {
-                Failure("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+                Failure("You need to launch a browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
@@ -252,7 +284,7 @@ namespace CharacterAI
         {
             if (_browser is null)
             {
-                Failure("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+                Failure("You need to launch a browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
@@ -268,37 +300,51 @@ namespace CharacterAI
             return new PuppeteerResponse(content, response.Ok);
         }
 
-        // YES, THAT IS THE ONLY WAY IT CAN WORK RIGHT NOW
-        private async Task<string?> RequestForCall(string url, dynamic data)
+        private async Task<FetchResponse> FetchRequestAsync(string url, string method, dynamic? data = null, string contentType = "application/json")
         {
             if (_browser is null)
             {
-                Failure("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
-                return null;
+                Failure("You need to launch a browser first!");
+                return new FetchResponse(null);
             }
 
-            string jsFunc = $"async () => await fetch('{url}', {{ " +
-            "    method: 'POST', " +
-            "    headers: " +
-            "    { " +
-            "        'accept': 'application/json, text/plain, */*', " +
-            "        'accept-encoding': 'gzip, deflate, br'," +
-            $"       'authorization': 'Token {_userToken}', " +
-            $"       'content-type': 'application/json', " +
-            "        'origin': 'https://beta.character.ai/' " +
-            "    }, " +
-            $"   body: JSON.stringify({JsonConvert.SerializeObject(data)}) " +
-            "}).then((response) => response.text())";
+            string jsFunc = "async () => {" +
+            $"  var response = await fetch('{url}', {{ " +
+            $"      method: '{method}', " +
+            "       headers: " +
+            "       { " +
+            "           'accept': 'application/json, text/plain, */*', " +
+            "           'accept-encoding': 'gzip, deflate, br'," +
+            $"          'authorization': 'Token {_userToken}', " +
+            $"          'content-type': '{contentType}', " +
+            "           'origin': 'https://beta.character.ai/' " +
+            "       }" + (data is null ? "" : 
+            $"    , body: JSON.stringify({JsonConvert.SerializeObject(data)}) ") +
+            "   });" +
+            "   var responseStatus = response.status;" +
+            "   var responseContent = await response.text();" +
+            "   return JSON.stringify({ status: responseStatus, content: responseContent });" +
+            "}";
 
-            string? content = null;
             try
             {
                 var response = await _chatPage.EvaluateFunctionAsync(jsFunc);
-                content = response.ToString();
-            }
-            catch (Exception e) { Failure(e: e); }
+                var fetchResponse = new FetchResponse(response);
 
-            return content;
+                if (fetchResponse.InQueue)
+                {
+                    await TryToLeaveQueue(log: false);
+                    response = await _chatPage.EvaluateFunctionAsync(jsFunc);
+                    fetchResponse = new FetchResponse(response);
+                }
+                
+                return fetchResponse;
+            }
+            catch (Exception e)
+            {
+                Failure(e: e);
+                return new FetchResponse(null);
+            }
         }
 
         private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method, string contentType)
@@ -327,50 +373,48 @@ namespace CharacterAI
             return new Payload() { Method = method, Headers = headers, PostData = serializedData };
         }
 
-        public async Task LaunchChromeAsync(string? customChromeDir = null)
+        /// <param name="customChromeDir">Directory where browser will be downloaded into.</param>
+        /// <param name="customExecPath">Full path to chrome/chromium executabe binary file.</param>
+        public async Task LaunchChromeAsync(string? customChromeDir = null, string? customExecPath = null)
         {
-            try
+            EXEC_PATH = customExecPath ?? await TryToDownloadBrowser(customChromeDir);
+
+            // Stop all other puppeteer-chrome instances
+            if (customChromeDir is null && customExecPath is null)
+                KillChromes(EXEC_PATH);
+
+            Log("\n(If it hangs on for some reason, just try to relaunch the application)\nLaunching browser... ");
+            var pex = new PuppeteerExtra();
+            var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(1));
+
+            _browser = await pex.Use(stealthPlugin).LaunchAsync(new()
             {
-                PrepareDirectories();
-                EXEC_PATH = await TryToDownloadBrowser(customChromeDir);
-
-                // Stop all other puppeteer-chrome instances
-                if (string.IsNullOrWhiteSpace(customChromeDir)) // don't wanna mess with it when there's several bots being launched on one chrome executable, so just skip it
-                    KillChromes(EXEC_PATH);
-
-                Log("\n(If it hangs on for some reason, just try to relaunch the application)\nLaunching browser... ");
-                var pex = new PuppeteerExtra();
-                var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(1));
-
-                _browser = await pex.Use(stealthPlugin).LaunchAsync(new()
+                Headless = true,
+                ExecutablePath = EXEC_PATH,
+                IgnoredDefaultArgs = new[] { "--disable-extensions" }, // https://github.com/puppeteer/puppeteer/blob/main/docs/troubleshooting.md#chrome-headless-doesnt-launch-on-windows
+                Args = new []
                 {
-                    Headless = true,
-                    UserDataDir = $"{CD}{slash}puppeteer-user",
-                    ExecutablePath = EXEC_PATH,
-                    Args = new []
-                    {
-                        "--no-default-browser-check", "--no-sandbox", "--disable-setuid-sandbox", "--no-first-run",
-                        "--disable-default-apps", "--disable-features=Translate", "--disable-infobars",
-                        "--mute-audio", "--ignore-certificate-errors",
-                        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
-                    },
-                    Timeout = 1_200_000 // 15 minutes
-                });
+                    "--no-default-browser-check", "--no-sandbox", "--disable-setuid-sandbox", "--no-first-run",
+                    "--disable-default-apps", "--disable-features=Translate", "--disable-infobars",
+                    "--mute-audio", "--ignore-certificate-errors", "--use-gl=egl",
+                    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+                },
+                Timeout = 1_200_000 // 15 minutes
+            });
+            Success("OK");
 
-                _chatPage = await _browser.NewPageAsync();
-                await _chatPage.GoToAsync($"https://beta.character.ai/search?"); // lightweight page
+            _chatPage = await _browser.NewPageAsync();
 
-                Success("OK");
-            }
-            catch (Exception e)
-            {
-                Failure(e.ToString());
-            }
+            Log("Opening character.ai page... ");
+            await TryToOpenCaiPage();
+
+            Success("OK");
         }
 
-        private static async Task<string> TryToDownloadBrowser(string? customPath)
+        /// <returns>Chrome executable path.</returns>
+        private static async Task<string> TryToDownloadBrowser(string? customChromeDir)
         {
-            string path = string.IsNullOrWhiteSpace(customPath) ? CHROME_PATH : customPath;
+            string path = string.IsNullOrWhiteSpace(customChromeDir) ? DEFAULT_CHROME_PATH : customChromeDir;
             using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path });
             var revision = await browserFetcher.GetRevisionInfoAsync();
 
@@ -387,6 +431,47 @@ namespace CharacterAI
             return revision.ExecutablePath;
         }
 
+        /// <summary>
+        /// Needed so Puppeteer could execute fetch() command in the browser console
+        /// </summary>
+        /// <returns></returns>
+        private async Task TryToOpenCaiPage()
+        {
+            var response = await _chatPage.GoToAsync($"https://beta.character.ai/search?"); // most lightweight page
+            string content = await response.TextAsync();
+
+            if (content.Contains("Waiting Room"))
+            {
+                Log("\nYou are now in line. Wait... ");
+                await TryToLeaveQueue();
+            }
+        }
+
+        private async Task TryToLeaveQueue(bool log = true)
+        {
+            await Task.Delay(30000);
+
+            if (log) Log("\n30sec has passed, reloading... ");
+            var response = await _chatPage.ReloadAsync();
+
+            string content = await response.TextAsync();
+            if (content.Contains("Waiting Room"))
+            {
+                if (log) Log(":(\nWait...");
+                await TryToLeaveQueue(log);
+            }
+        }
+
+        //private async Task WaitForCloudflareCheck()
+        //{
+        //    string content = await _chatPage.GetContentAsync();
+        //    if (content.Contains("Just a moment..."))
+        //    {
+        //        await Task.Delay(5000);
+        //        await WaitForCloudflareCheck();
+        //    }
+        //}
+
         public static void KillChromes(string execPath)
         {
             var runningProcesses = Process.GetProcesses();
@@ -399,12 +484,6 @@ namespace CharacterAI
 
                 if (isPuppeteerChrome) process.Kill();
             }
-        }
-
-        private static void PrepareDirectories()
-        {
-            string userPath = $"{CD}{slash}puppeteer-user";
-            if (!Directory.Exists(userPath)) Directory.CreateDirectory(userPath);
         }
     }
 }
