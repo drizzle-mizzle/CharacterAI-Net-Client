@@ -465,6 +465,7 @@ namespace CharacterAI
         /// <param name="customExecPath">Full path to chrome/chromium executabe binary file.</param>
         public async Task LaunchChromeAsync(string? customChromeDir = null, string? customExecPath = null)
         {
+            _reloading = true;
             EXEC_PATH = string.IsNullOrWhiteSpace(customExecPath) ? await TryToDownloadBrowser(customChromeDir) : customExecPath;
 
             // Stop all other puppeteer-chrome instances
