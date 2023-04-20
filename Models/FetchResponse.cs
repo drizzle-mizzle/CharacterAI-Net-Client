@@ -1,10 +1,5 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace CharacterAI.Models
 {
@@ -14,6 +9,7 @@ namespace CharacterAI.Models
         public string? Status { get; set; }
         public bool IsSuccessful { get; set; }
         public bool InQueue { get; set; }
+        public bool IsBlocked { get; set; }
 
         public FetchResponse(JToken? response)
         {
@@ -29,6 +25,7 @@ namespace CharacterAI.Models
             Status = result?.status;
             Content = result?.content;
             InQueue = Content?.Contains("Waiting Room") ?? false;
+            IsBlocked = Content?.Contains("Just a moment") ?? false;
         }
     }
 }

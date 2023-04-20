@@ -7,23 +7,25 @@ using System.Diagnostics;
 using PuppeteerSharp;
 using PuppeteerExtraSharp.Plugins.ExtraStealth;
 using PuppeteerExtraSharp.Plugins.ExtraStealth.Evasions;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using System;
 
 namespace CharacterAI
 {
     public class Integration : CommonService
     {
+        public Character CurrentCharacter => _currentCharacter;
+        public List<string> Chats => _chatsList;
+        public string EXEC_PATH = null!;
+
+        // puppeteer
         private IPage _chatPage = null!;
         private IBrowser _browser = null!;
+        private readonly List<int> _requestQueue = new();
+        private bool _reloading = true;
+
+        // integration
         private Character _currentCharacter = new();
         private readonly string? _userToken;
         private readonly List<string> _chatsList = new();
-
-        public Character CurrentCharacter => _currentCharacter;
-        public List<string> Chats => _chatsList;
-
-        public string EXEC_PATH = null!;
 
         public Integration(string userToken)
             => _userToken = userToken;
@@ -88,6 +90,12 @@ namespace CharacterAI
         /// <returns>CharacterResponse</returns>
         public async Task<CharacterResponse> CallCharacterAsync(string message = "", string? imagePath = null, string? historyId = null, ulong? primaryMsgId = null, ulong? parentMsgId = null)
         {
+            while (true)
+            {
+                if (_reloading) await Task.Delay(3000);
+                else break;
+            }
+
             var contentDynamic = BasicCallContent(_currentCharacter, message, imagePath, historyId ?? _chatsList.First());
 
             // Fetch new answer ("perform swipe").
@@ -105,7 +113,12 @@ namespace CharacterAI
             }
 
             string url = "https://beta.character.ai/chat/streaming/";
-            var response = await FetchRequestAsync(url, "POST", contentDynamic);
+
+            dynamic response;
+            response = await FetchRequestAsync(url, "POST", contentDynamic);
+
+            if ((response as FetchResponse)!.IsBlocked)
+                response = await StreamingRequestFallbackAsync(contentDynamic);
 
             return new CharacterResponse(response);
         }
@@ -347,6 +360,81 @@ namespace CharacterAI
             }
         }
 
+        private async Task<PuppeteerResponse> StreamingRequestFallbackAsync(dynamic data)
+        {
+            if (_browser is null)
+            {
+                Failure("You need to launch a browser first!\n Use `await LaunchChromeAsync()`");
+                return new PuppeteerResponse(null, false);
+            }
+
+            int? requestId = await WaitForTurnAsync();
+            if (requestId is null) return new PuppeteerResponse(null, false);
+
+            string url = "https://beta.character.ai/chat/streaming/";
+            string downloadPath = $"{CD}{slash}puppeteer-temps{slash}{requestId}";
+            if (Directory.Exists(downloadPath))
+                Directory.Delete(downloadPath, true);
+
+            Directory.CreateDirectory(downloadPath);
+
+            var page = await _browser.NewPageAsync();
+            await page.SetRequestInterceptionAsync(true);
+            await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", downloadPath });
+
+            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json");
+
+            try { await page.GoToAsync(url); } // it will always throw an exception
+            catch (NavigationException)
+            {
+                // "download" is a temporary file name where response content is saved
+                string responsePath = $"{downloadPath}{slash}download";
+
+                // Wait 60 seconds for the response to download
+                for (int i = 0; i < 30; i++)
+                {
+                    await Task.Delay(2000);
+                    if (File.Exists(responsePath)) break;
+                    if (i == 30) return new PuppeteerResponse(null, false);
+                }
+
+                _ = page.CloseAsync();
+                _requestQueue.Remove((int)requestId);
+
+                var content = await File.ReadAllTextAsync(responsePath);
+                Directory.Delete(downloadPath, recursive: true);
+
+                if (string.IsNullOrEmpty(content))
+                    return new PuppeteerResponse(null, false);
+
+                return new PuppeteerResponse(content, true);
+            }
+
+            return new PuppeteerResponse(null, false); // not really needed
+        }
+
+        private async Task<int?> WaitForTurnAsync()
+        {
+            int requestId;
+
+            while (true)
+            {
+                requestId = new Random().Next(32767);
+                if (!_requestQueue.Contains(requestId)) break;
+            }
+            _requestQueue.Add(requestId);
+
+            for (int i = 0; i < 60; i++)
+            {
+                if (_requestQueue.First() == requestId) break;
+                if (i == 60) return null;
+
+                await Task.Delay(3000);
+            }
+
+            return requestId;
+        }
+
         private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method, string contentType)
         {
             var r = args.Request;
@@ -377,10 +465,10 @@ namespace CharacterAI
         /// <param name="customExecPath">Full path to chrome/chromium executabe binary file.</param>
         public async Task LaunchChromeAsync(string? customChromeDir = null, string? customExecPath = null)
         {
-            EXEC_PATH = customExecPath ?? await TryToDownloadBrowser(customChromeDir);
+            EXEC_PATH = string.IsNullOrWhiteSpace(customExecPath) ? await TryToDownloadBrowser(customChromeDir) : customExecPath;
 
             // Stop all other puppeteer-chrome instances
-            if (customChromeDir is null && customExecPath is null)
+            if (string.IsNullOrWhiteSpace(customChromeDir) && string.IsNullOrWhiteSpace(customExecPath))
                 KillChromes(EXEC_PATH);
 
             Log("\n(If it hangs on for some reason, just try to relaunch the application)\nLaunching browser... ");
@@ -408,6 +496,7 @@ namespace CharacterAI
             Log("Opening character.ai page... ");
             await TryToOpenCaiPage();
 
+            _reloading = false;
             Success("OK");
         }
 

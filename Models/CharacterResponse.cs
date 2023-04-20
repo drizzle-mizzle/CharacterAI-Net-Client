@@ -11,7 +11,8 @@ namespace CharacterAI.Models
         public string? ErrorReason { get; }
         public bool IsSuccessful => ErrorReason is null;
 
-        public CharacterResponse(FetchResponse response)
+        // response is PuppeteerResponse or FetchReponse
+        public CharacterResponse(dynamic response)
         {
             dynamic responseParsed = ParseCharacterResponse(response);
 
@@ -24,31 +25,32 @@ namespace CharacterAI.Models
             }
         }
 
-        private static dynamic ParseCharacterResponse(FetchResponse response)
+        private static dynamic ParseCharacterResponse(dynamic response)
         {
             if (!response.IsSuccessful)
             {
-                Failure(response.Status, response.Content);
+                Failure(response?.Status, response?.Content);
                 return $"{WARN_SIGN} Failed to fetch response.\n(probably, CharacterAI servers are down, try again later)";
             }
             
+            string content = response.Content;
             try
             {
-                var chunks = response.Content!.Split("\n").ToList();
+                var chunks = content.Split("\n").ToList();
                 var parsedChunks = chunks.ConvertAll(JsonConvert.DeserializeObject<dynamic>);
                 parsedChunks.Reverse(); // Only last chunks contains "abort" or "final_chunk", so it will be a bit faster to find
 
                 // Check if message was filtered.
-                // Aborted message last chunk will look like: { "abort": true, "error": "No eligible candidates", "last_user_msg_id": 69, "last_user_msg_uuid": "..." }
+                // Aborted message last chunk will look like: { "abort": true, "error": "No eligible candidates", "last_user_msg_id": "...", "last_user_msg_uuid": "..." }
                 if (parsedChunks.All(c => c?.abort is null))
                     return parsedChunks.First(c => c?.is_final_chunk == true)!;
 
-                // Return last normal chunk, before filter aborted message
+                // Return last normal chunk, before filter aborted message stream
                 var eMsg = $"{WARN_SIGN} Character response was filtered.";
                 var lastMessageChunk = parsedChunks.FirstOrDefault(c => c?.replies is not null);
                 if (lastMessageChunk is null) return eMsg;
                 
-                var lastReply = (GetCharacterReplies(lastMessageChunk?.replies) as List<Reply>)?.FirstOrDefault();
+                var lastReply = GetCharacterReplies((JArray)lastMessageChunk.replies)?.FirstOrDefault();
                 var lastWords = lastReply is null ? "" : $" It was cut off on:\n{lastReply.Text}";
 
                 return eMsg + lastWords;
@@ -56,7 +58,7 @@ namespace CharacterAI.Models
             catch (Exception e)
             {
                 string eMsg = $"{WARN_SIGN} Something went wrong...\n";
-                Failure($"{response.Status} | {eMsg}", response.Content, e: e);
+                Failure($"{response?.Status ?? "?"} | {eMsg}", content?.Trim()?.Replace("\n\n", ""), e: e);
 
                 return eMsg;
             }

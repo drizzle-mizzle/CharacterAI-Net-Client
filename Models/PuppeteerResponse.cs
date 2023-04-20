@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace CharacterAI.Models
+﻿namespace CharacterAI.Models
 {
     public class PuppeteerResponse
     {
@@ -19,7 +12,7 @@ namespace CharacterAI.Models
         {
             Content = responseContent;
             IsSuccessful = isSuccessful;
-            InQueue = Content?.Contains("You are now in line") ?? false;
+            InQueue = Content?.Contains("Waiting Room") ?? false;
         }
     }
 }
