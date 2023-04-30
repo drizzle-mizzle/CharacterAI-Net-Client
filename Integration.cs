@@ -15,23 +15,22 @@ namespace CharacterAI
         public Character CurrentCharacter => _currentCharacter;
         public List<string> Chats => _chatsList;
         public string EXEC_PATH = null!;
+        public Integration(string userToken)
+            => _userToken = userToken;
 
-        // puppeteer
+        // Puppeteer
         private IPage _chatPage = null!;
         private IBrowser _browser = null!;
         private readonly List<int> _requestQueue = new();
         private bool _reloading = true;
 
-        // integration
+        // Integration
         private Character _currentCharacter = new();
         private readonly string? _userToken;
         private readonly List<string> _chatsList = new();
 
-        public Integration(string userToken)
-            => _userToken = userToken;
-
         /// <summary>
-        /// Use it to quickly setup integration with a character and get-last/create-new chat with it.
+        /// Use it to quickly create an integration with a character and get the last or create a new chat with it.
         /// </summary>
         /// <returns>SetupResult</returns>
         public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
@@ -69,7 +68,7 @@ namespace CharacterAI
         }
 
         /// <summary>
-        /// Short version of SetupAsync for a current character
+        /// "Short version" of SetupAsync for a current character
         /// </summary>
         /// <returns>SetupResult</returns>
         public async Task<SetupResult> Reset()
@@ -77,7 +76,7 @@ namespace CharacterAI
             _chatsList.Clear();
             var historyId = await CreateNewChatAsync();
             if (historyId is null)
-                return new SetupResult(false, "Failed to create new chat.");
+                return new SetupResult(false, "Failed to create a new chat.");
 
             _chatsList.Add(historyId);
 
@@ -115,9 +114,10 @@ namespace CharacterAI
             string url = "https://beta.character.ai/chat/streaming/";
 
             dynamic response;
-            response = await FetchRequestAsync(url, "POST", contentDynamic);
+            FetchResponse fetchResponse = await FetchRequestAsync(url, "POST", contentDynamic);
+            response = fetchResponse;
 
-            if ((response as FetchResponse)!.IsBlocked)
+            if (fetchResponse.IsBlocked)
                 response = await StreamingRequestFallbackAsync(contentDynamic);
 
             return new CharacterResponse(response);
@@ -135,7 +135,7 @@ namespace CharacterAI
 
             if (response.InQueue)
             {
-                await TryToLeaveQueue(false);
+                await TryToLeaveQueue(log: false);
                 response = await RequestPost(url, data);
             }
 
@@ -161,7 +161,7 @@ namespace CharacterAI
 
             if (response.InQueue)
             {
-                await TryToLeaveQueue(false);
+                await TryToLeaveQueue(log: false);
                 response = await RequestPost(url, data);
             }
 
@@ -173,7 +173,7 @@ namespace CharacterAI
         /// <summary>
         /// Create new chat with a character
         /// </summary>
-        /// <returns>returns chat_history_id if successful; null if fails</returns>
+        /// <returns>returns chat_history_id if successful; null if fails.</returns>
         public async Task<string?> CreateNewChatAsync(string? characterId = null)
         {
             string url = "https://beta.character.ai/chat/history/create/";
@@ -185,7 +185,7 @@ namespace CharacterAI
 
             if (response.InQueue)
             {
-                await TryToLeaveQueue(false);
+                await TryToLeaveQueue(log: false);
                 response = await RequestPost(url, data);
             }
 
@@ -224,7 +224,7 @@ namespace CharacterAI
             var response = await RequestGet(url);
             if (response.InQueue)
             {
-                await TryToLeaveQueue(false);
+                await TryToLeaveQueue(log: false);
                 response = await RequestGet(url);
             }
 
@@ -261,7 +261,7 @@ namespace CharacterAI
 
             if (response.InQueue)
             {
-                await TryToLeaveQueue(false);
+                await TryToLeaveQueue(log: false);
                 response = await RequestPost(url, data, contentType);
             }
 
@@ -343,14 +343,12 @@ namespace CharacterAI
             {
                 var response = await _chatPage.EvaluateFunctionAsync(jsFunc);
                 var fetchResponse = new FetchResponse(response);
-
                 if (fetchResponse.InQueue)
                 {
                     await TryToLeaveQueue(log: false);
-                    response = await _chatPage.EvaluateFunctionAsync(jsFunc);
-                    fetchResponse = new FetchResponse(response);
+                    fetchResponse = FetchRequestAsync(url, method, data, contentType);
                 }
-                
+
                 return fetchResponse;
             }
             catch (Exception e)
@@ -501,26 +499,6 @@ namespace CharacterAI
             Success("OK");
         }
 
-        /// <returns>Chrome executable path.</returns>
-        private static async Task<string> TryToDownloadBrowser(string? customChromeDir)
-        {
-            string path = string.IsNullOrWhiteSpace(customChromeDir) ? DEFAULT_CHROME_PATH : customChromeDir;
-            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path });
-            var revision = await browserFetcher.GetRevisionInfoAsync();
-
-            if (!revision.Local)
-            {
-                Log("\nIt may take some time on the first launch, because it will need to download a Chrome executable (~450mb).\n" +
-                      "If this process takes too much time, ensure you have a good internet connection (timeout = 20 minutes).\n");
-
-                Log("\nDownloading browser... ");
-                await browserFetcher.DownloadAsync();
-                Success("OK");
-            }
-
-            return revision.ExecutablePath;
-        }
-
         /// <summary>
         /// Needed so Puppeteer could execute fetch() command in the browser console
         /// </summary>
@@ -537,11 +515,15 @@ namespace CharacterAI
             }
         }
 
-        private async Task TryToLeaveQueue(bool log = true)
+        /// <returns>
+        /// Reloaded page.
+        /// </returns>
+        internal async Task TryToLeaveQueue(bool log = true)
         {
-            await Task.Delay(30000);
+            _reloading = true;
+            await Task.Delay(15000);
 
-            if (log) Log("\n30sec has passed, reloading... ");
+            if (log) Log("\n15sec has passed, reloading... ");
             var response = await _chatPage.ReloadAsync();
 
             string content = await response.TextAsync();
@@ -550,17 +532,9 @@ namespace CharacterAI
                 if (log) Log(":(\nWait...");
                 await TryToLeaveQueue(log);
             }
-        }
 
-        //private async Task WaitForCloudflareCheck()
-        //{
-        //    string content = await _chatPage.GetContentAsync();
-        //    if (content.Contains("Just a moment..."))
-        //    {
-        //        await Task.Delay(5000);
-        //        await WaitForCloudflareCheck();
-        //    }
-        //}
+            _reloading = false;
+        }
 
         public static void KillChromes(string execPath)
         {

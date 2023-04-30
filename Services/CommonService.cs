@@ -1,4 +1,5 @@
 ﻿using CharacterAI.Models;
+using PuppeteerSharp;
 using System.Dynamic;
 
 namespace CharacterAI.Services
@@ -12,7 +13,31 @@ namespace CharacterAI.Services
         internal static readonly string WARN_SIGN = "⚠";
         internal static string DEFAULT_CHROME_PATH = $"{CD}{slash}puppeteer-chrome";
 
-        // Log and return true
+        /// <returns>
+        /// Chrome executable path.
+        /// </returns>
+        internal static async Task<string> TryToDownloadBrowser(string? customChromeDir)
+        {
+            string path = string.IsNullOrWhiteSpace(customChromeDir) ? DEFAULT_CHROME_PATH : customChromeDir;
+            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path });
+            var revision = await browserFetcher.GetRevisionInfoAsync();
+
+            if (!revision.Local)
+            {
+                Log("\nIt may take some time on the first launch, because it will need to download a Chrome executable (~450mb).\n" +
+                      "If this process takes too much time, ensure you have a good internet connection (timeout = 20 minutes).\n");
+
+                Log("\nDownloading browser... ");
+                await browserFetcher.DownloadAsync();
+                Success("OK");
+            }
+
+            return revision.ExecutablePath;
+        }
+
+        /// <summary>
+        /// Log and return true
+        /// </summary>
         internal static bool Success(string logText = "")
         {
             Log(logText + "\n", ConsoleColor.Green);
@@ -20,7 +45,9 @@ namespace CharacterAI.Services
             return true;
         }
 
-        // Log and return false
+        /// <summary>
+        /// Log and return false
+        /// </summary>
         internal static bool Failure(string? logText = null, string? response = null, Exception? e = null)
         {
             if (logText is not null)

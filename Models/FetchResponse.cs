@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using CharacterAI.Services;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace CharacterAI.Models

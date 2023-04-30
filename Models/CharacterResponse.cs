@@ -47,10 +47,12 @@ namespace CharacterAI.Models
 
                 // Return last normal chunk, before filter aborted message stream
                 var eMsg = $"{WARN_SIGN} Character response was filtered.";
-                var lastMessageChunk = parsedChunks.FirstOrDefault(c => c?.replies is not null);
+                var lastMessageChunk = parsedChunks.Find(c => c?.replies != null);
                 if (lastMessageChunk is null) return eMsg;
-                
-                var lastReply = GetCharacterReplies((JArray)lastMessageChunk.replies)?.FirstOrDefault();
+
+                // Not sure if it actually works, as it really hard to test it, and there's not always any "last words",
+                // sometimes response is being filtered on the very beginning.
+                var lastReply = GetCharacterReplies((JArray)lastMessageChunk.replies).First();
                 var lastWords = lastReply is null ? "" : $" It was cut off on:\n{lastReply.Text}";
 
                 return eMsg + lastWords;
