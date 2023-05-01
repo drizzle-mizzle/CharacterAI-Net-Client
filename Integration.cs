@@ -346,7 +346,7 @@ namespace CharacterAI
                 if (fetchResponse.InQueue)
                 {
                     await TryToLeaveQueue(log: false);
-                    fetchResponse = FetchRequestAsync(url, method, data, contentType);
+                    fetchResponse = await FetchRequestAsync(url, method, data, contentType);
                 }
 
                 return fetchResponse;
@@ -550,7 +550,7 @@ namespace CharacterAI
 
                     if (isPuppeteerChrome) process.Kill();
                 }
-            }
+            } 
             catch { }
         }
     }
