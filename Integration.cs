@@ -538,16 +538,20 @@ namespace CharacterAI
 
         public static void KillChromes(string execPath)
         {
-            var runningProcesses = Process.GetProcesses();
-
-            foreach (var process in runningProcesses)
+            try
             {
-                bool isPuppeteerChrome = process.ProcessName == "chrome" &&
-                                         process.MainModule != null &&
-                                         process.MainModule.FileName == execPath;
+                var runningProcesses = Process.GetProcesses();
 
-                if (isPuppeteerChrome) process.Kill();
+                foreach (var process in runningProcesses)
+                {
+                    bool isPuppeteerChrome = process.ProcessName == "chrome" &&
+                                             process.MainModule != null &&
+                                             process.MainModule.FileName == execPath;
+
+                    if (isPuppeteerChrome) process.Kill();
+                }
             }
+            catch { }
         }
     }
 }
