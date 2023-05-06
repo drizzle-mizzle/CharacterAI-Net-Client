@@ -38,6 +38,7 @@ namespace CharacterAI
             Log($"\nStarting character setup...\n  (Character ID: {characterId ?? _currentCharacter.Id})\n");
             Log("Fetching character info... ");
 
+            ClearTemps();
             // Get info about character
             var character = await GetInfoAsync(characterId);
             if (character.IsEmpty)
@@ -165,9 +166,11 @@ namespace CharacterAI
                 response = await RequestPost(url, data);
             }
 
-            return response.IsSuccessful ?
-                JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id :
-                await CreateNewChatAsync(characterId);
+            if (response.IsSuccessful)
+                return JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id;
+
+            await Task.Delay(5000);
+            return await CreateNewChatAsync(characterId);
         }
 
         /// <summary>
@@ -186,6 +189,13 @@ namespace CharacterAI
             if (response.InQueue)
             {
                 await TryToLeaveQueue(log: false);
+                response = await RequestPost(url, data);
+            }
+
+            // Their servers are shit and sometimes it requires a second request
+            if (!response.IsSuccessful)
+            {
+                await Task.Delay(3000);
                 response = await RequestPost(url, data);
             }
 
@@ -388,10 +398,10 @@ namespace CharacterAI
                 // "download" is a temporary file name where response content is saved
                 string responsePath = $"{downloadPath}{slash}download";
 
-                // Wait 60 seconds for the response to download
+                // Wait 90 seconds for the response to download
                 for (int i = 0; i < 30; i++)
                 {
-                    await Task.Delay(2000);
+                    await Task.Delay(3000);
                     if (File.Exists(responsePath)) break;
                     if (i == 30) return new PuppeteerResponse(null, false);
                 }
@@ -400,7 +410,7 @@ namespace CharacterAI
                 _requestQueue.Remove((int)requestId);
 
                 var content = await File.ReadAllTextAsync(responsePath);
-                Directory.Delete(downloadPath, recursive: true);
+                try { Directory.Delete(downloadPath, recursive: true); } catch { };
 
                 if (string.IsNullOrEmpty(content))
                     return new PuppeteerResponse(null, false);

@@ -110,5 +110,10 @@ namespace CharacterAI.Services
 
             return content;
         }
+
+        internal static void ClearTemps()
+        {
+            try { Directory.Delete($"{CD}{slash}puppeteer-temps", true); } catch { }
+        }
     }
 }

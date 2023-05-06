@@ -6,7 +6,7 @@ namespace CharacterAI.Models
 {
     public class CharacterResponse : CommonService
     {
-        public List<Reply> Replies { get; } = new();
+        public Reply? Response { get; }
         public ulong LastUserMsgId { get; }
         public string? ErrorReason { get; }
         public bool IsSuccessful => ErrorReason is null;
@@ -20,7 +20,7 @@ namespace CharacterAI.Models
                 ErrorReason = responseParsed;
             else
             {
-                Replies = GetCharacterReplies(responseParsed.replies);
+                Response = GetCharacterReply(responseParsed.replies);
                 LastUserMsgId = responseParsed.last_user_msg_id;
             }
         }
@@ -40,22 +40,19 @@ namespace CharacterAI.Models
                 var parsedChunks = chunks.ConvertAll(JsonConvert.DeserializeObject<dynamic>);
                 parsedChunks.Reverse(); // Only last chunks contains "abort" or "final_chunk", so it will be a bit faster to find
 
-                // Check if message was filtered.
-                // Aborted message last chunk will look like: { "abort": true, "error": "No eligible candidates", "last_user_msg_id": "...", "last_user_msg_uuid": "..." }
-                if (parsedChunks.All(c => c?.abort is null))
-                    return parsedChunks.First(c => c?.is_final_chunk == true)!;
+                var finalChunk = parsedChunks.FirstOrDefault(c => c?.is_final_chunk == true, null);
+                if (finalChunk is not null) return finalChunk;
 
-                // Return last normal chunk, before filter aborted message stream
-                var eMsg = $"{WARN_SIGN} Character response was filtered.";
-                var lastMessageChunk = parsedChunks.Find(c => c?.replies != null);
-                if (lastMessageChunk is null) return eMsg;
+                var abortMsg = $"{WARN_SIGN} Seems like character response was filtered!";
+                var lastMessageChunk = parsedChunks.Find(c => c?.replies is not null);
+                if (lastMessageChunk is null) return abortMsg;
 
                 // Not sure if it actually works, as it really hard to test it, and there's not always any "last words",
                 // sometimes response is being filtered on the very beginning.
-                var lastReply = GetCharacterReplies((JArray)lastMessageChunk.replies).First();
+                var lastReply = GetCharacterReply((JArray)lastMessageChunk.replies);
                 var lastWords = lastReply is null ? "" : $" It was cut off on:\n{lastReply.Text}";
 
-                return eMsg + lastWords;
+                return abortMsg + lastWords;
             }
             catch (Exception e)
             {
@@ -66,25 +63,17 @@ namespace CharacterAI.Models
             }
         }
 
-        private static List<Reply> GetCharacterReplies(JArray? jReplies)
+        private static Reply? GetCharacterReply(JArray? jReplies)
         {
-            var replies = new List<Reply>();
-            if (string.IsNullOrWhiteSpace(jReplies?.ToString())) return replies;
+            if (string.IsNullOrWhiteSpace(jReplies?.ToString()) || !jReplies.Any()) return null;
 
-            foreach (dynamic reply in jReplies)
+            var reply = jReplies.First() as dynamic;
+            return new Reply()
             {
-                var replyId = reply?.id;
-                if (replyId is null) continue;
-
-                replies.Add(new Reply
-                {
-                    Id = replyId,
-                    Text = reply?.text,
-                    ImageRelPath = reply?.image_rel_path
-                });
-            }
-
-            return replies;
+                Id = reply?.id,
+                Text = reply?.text,
+                ImageRelPath = reply?.image_rel_path
+            };
         }
     }
 }
