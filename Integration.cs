@@ -36,8 +36,10 @@ namespace CharacterAI
         /// <returns>SetupResult</returns>
         public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false, bool caiPlusMode = false)
         {
-            CAIplus = caiPlusMode;
             Log($"\nStarting character setup...\n  (Character ID: {characterId ?? _currentCharacter.Id})\n");
+            CAIplus = caiPlusMode;
+            if (CAIplus) Log($"c.ai+ Mode Enabled\n", ConsoleColor.Yellow);
+
             Log("Fetching character info... ");
 
             ClearTemps();
