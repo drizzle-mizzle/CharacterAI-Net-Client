@@ -12,6 +12,7 @@ namespace CharacterAI
 {
     public class Integration : CommonService
     {
+        public bool CAIplus { get; set; } = false;
         public Character CurrentCharacter => _currentCharacter;
         public List<string> Chats => _chatsList;
         public string EXEC_PATH = null!;
@@ -33,8 +34,9 @@ namespace CharacterAI
         /// Use it to quickly create an integration with a character and get the last or create a new chat with it.
         /// </summary>
         /// <returns>SetupResult</returns>
-        public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
+        public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false, bool caiPlusMode = false)
         {
+            CAIplus = caiPlusMode;
             Log($"\nStarting character setup...\n  (Character ID: {characterId ?? _currentCharacter.Id})\n");
             Log("Fetching character info... ");
 
@@ -112,7 +114,7 @@ namespace CharacterAI
                 contentDynamic.seen_msg_ids = new ulong[] { (ulong)primaryMsgId };
             }
 
-            string url = "https://beta.character.ai/chat/streaming/";
+            string url = $"https://{(CAIplus ? "plus" : "beta" )}.character.ai/chat/streaming/";
 
             dynamic response;
             FetchResponse fetchResponse = await FetchRequestAsync(url, "POST", contentDynamic);
@@ -130,7 +132,7 @@ namespace CharacterAI
         /// <returns>Character</returns>
         public async Task<Character> GetInfoAsync(string? characterId = null)
         {
-            string url = "https://beta.character.ai/chat/character/info/";
+            string url = $"https://{(CAIplus ? "plus" : "beta" )}.character.ai/chat/character/info/";
             var data = new Dictionary<string, string> { { "external_id", characterId ?? CurrentCharacter.Id! } };
             var response = await RequestPost(url, data);
 
@@ -152,7 +154,7 @@ namespace CharacterAI
 
         public async Task<string?> GetLastChatAsync(string? characterId = null)
         {
-            string url = "https://beta.character.ai/chat/history/continue/";
+            string url = $"https://{(CAIplus ? "plus" : "beta" )}.character.ai/chat/history/continue/";
 
             var data = new FormUrlEncodedContent(new Dictionary<string, string> {
                 { "character_external_id", characterId ?? CurrentCharacter.Id! }
@@ -179,7 +181,7 @@ namespace CharacterAI
         /// <returns>returns chat_history_id if successful; null if fails.</returns>
         public async Task<string?> CreateNewChatAsync(string? characterId = null)
         {
-            string url = "https://beta.character.ai/chat/history/create/";
+            string url = $"https://{(CAIplus ? "plus" : "beta" )}.character.ai/chat/history/create/";
             var data = new Dictionary<string, string> {
                 { "character_external_id", characterId ?? _currentCharacter.Id! }
             };
@@ -215,7 +217,7 @@ namespace CharacterAI
         // not working
         //public async Task<HistoriesResponse> GetHistoriesAsync(string? characterId = null)
         //{
-        //    string url = "https://beta.character.ai/chat/character/histories/";
+        //    string url = $"https://{(CAIplus ? "plus" : "beta" )}.character.ai/chat/character/histories/";
 
         //    var data = new Dictionary<string, string> {
         //        { "external_id", characterId ?? _currentCharacter.Id! },
@@ -230,7 +232,7 @@ namespace CharacterAI
         // Search for a character
         public async Task<SearchResponse> SearchAsync(string query)
         {
-            string url = $"https://beta.character.ai/chat/characters/search/?query={query}";
+            string url = $"https://{(CAIplus ? "plus" : "beta" )}.character.ai/chat/characters/search/?query={query}";
             var response = await RequestGet(url);
             if (response.InQueue)
             {
@@ -252,7 +254,7 @@ namespace CharacterAI
         {
             return null;
 
-            string url = "https://beta.character.ai/chat/upload-image/";
+            string url = $"https://{(CAIplus ? "plus" : "beta" )}.character.ai/chat/upload-image/";
 
             if (!fileName.Contains('.')) fileName += ".jpeg";
             string ext = fileName.Split(".").Last();
@@ -340,7 +342,7 @@ namespace CharacterAI
             "           'accept-encoding': 'gzip, deflate, br'," +
             $"          'authorization': 'Token {_userToken}', " +
             $"          'content-type': '{contentType}', " +
-            "           'origin': 'https://beta.character.ai/' " +
+            $"          'origin': '{url}' " +
             "       }" + (data is null ? "" : 
             $"    , body: JSON.stringify({JsonConvert.SerializeObject(data)}) ") +
             "   });" +
@@ -379,7 +381,7 @@ namespace CharacterAI
             int? requestId = await WaitForTurnAsync();
             if (requestId is null) return new PuppeteerResponse(null, false);
 
-            string url = "https://beta.character.ai/chat/streaming/";
+            string url = $"https://{(CAIplus ? "plus" : "beta" )}.character.ai/chat/streaming/";
             string downloadPath = $"{CD}{slash}puppeteer-temps{slash}{requestId}";
             if (Directory.Exists(downloadPath))
                 Directory.Delete(downloadPath, true);
@@ -402,14 +404,14 @@ namespace CharacterAI
                 for (int i = 0; i < 30; i++)
                 {
                     await Task.Delay(3000);
-                    if (File.Exists(responsePath)) break;
+                    if (System.IO.File.Exists(responsePath)) break;
                     if (i == 30) return new PuppeteerResponse(null, false);
                 }
 
                 _ = page.CloseAsync();
                 _requestQueue.Remove((int)requestId);
 
-                var content = await File.ReadAllTextAsync(responsePath);
+                var content = await System.IO.File.ReadAllTextAsync(responsePath);
                 try { Directory.Delete(downloadPath, recursive: true); } catch { };
 
                 if (string.IsNullOrEmpty(content))
@@ -515,7 +517,7 @@ namespace CharacterAI
         /// <returns></returns>
         private async Task TryToOpenCaiPage()
         {
-            var response = await _chatPage.GoToAsync($"https://beta.character.ai/search?"); // most lightweight page
+            var response = await _chatPage.GoToAsync($"https://{(CAIplus ? "plus" : "beta" )}.character.ai/search?"); // most lightweight page
             string content = await response.TextAsync();
 
             if (content.Contains("Waiting Room"))
