@@ -16,8 +16,11 @@ namespace CharacterAI
         public Character CurrentCharacter => _currentCharacter;
         public List<string> Chats => _chatsList;
         public string EXEC_PATH = null!;
-        public Integration(string userToken)
-            => _userToken = userToken;
+        public Integration(string userToken, bool caiPlusMode = false)
+        {
+            _userToken = userToken;
+            CAIplus = caiPlusMode;
+        }
 
         // Puppeteer
         private IPage _chatPage = null!;
@@ -34,12 +37,9 @@ namespace CharacterAI
         /// Use it to quickly create an integration with a character and get the last or create a new chat with it.
         /// </summary>
         /// <returns>SetupResult</returns>
-        public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false, bool caiPlusMode = false)
+        public async Task<SetupResult> SetupAsync(string? characterId = null, bool startWithNewChat = false)
         {
             Log($"\nStarting character setup...\n  (Character ID: {characterId ?? _currentCharacter.Id})\n");
-            CAIplus = caiPlusMode;
-            if (CAIplus) Log($"c.ai+ Mode Enabled\n", ConsoleColor.Yellow);
-
             Log("Fetching character info... ");
 
             ClearTemps();
@@ -505,6 +505,7 @@ namespace CharacterAI
             Success("OK");
 
             _chatPage = await _browser.NewPageAsync();
+            if (CAIplus) Log($"c.ai+ Mode Enabled\n", ConsoleColor.Yellow);
 
             Log("Opening character.ai page... ");
             await TryToOpenCaiPage();
