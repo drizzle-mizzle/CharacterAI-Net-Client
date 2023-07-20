@@ -7,7 +7,7 @@ namespace CharacterAI.Models
     public class CharacterResponse : CommonService
     {
         public Reply? Response { get; }
-        public ulong LastUserMsgId { get; }
+        public string? LastUserMsgUuId { get; }
         public string? ErrorReason { get; }
         public bool IsSuccessful => ErrorReason is null;
 
@@ -21,7 +21,7 @@ namespace CharacterAI.Models
             else
             {
                 Response = GetCharacterReply(responseParsed.replies);
-                LastUserMsgId = responseParsed.last_user_msg_id;
+                LastUserMsgUuId = responseParsed.last_user_msg_uuid;
             }
         }
 
@@ -70,8 +70,9 @@ namespace CharacterAI.Models
             var reply = jReplies.First() as dynamic;
             return new Reply()
             {
-                Id = reply?.id,
-                Text = reply?.text,
+                //Id = (ulong)(reply?.id ?? 0),
+                UuId = (string)(reply?.uuid ?? ""),
+                Text = reply?.text ?? "",
                 ImageRelPath = reply?.image_rel_path
             };
         }

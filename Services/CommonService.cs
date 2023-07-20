@@ -4,36 +4,15 @@ using System.Dynamic;
 
 namespace CharacterAI.Services
 {
-    public partial class CommonService
+    /// <summary>
+    /// Some underhood logic
+    /// </summary>
+    public class CommonService
     {
 
         internal static string CD = Directory.GetCurrentDirectory();
-        internal static char slash = Path.DirectorySeparatorChar;
-
+        internal static char SC = Path.DirectorySeparatorChar;
         internal static readonly string WARN_SIGN = "⚠";
-        internal static string DEFAULT_CHROME_PATH = $"{CD}{slash}puppeteer-chrome";
-
-        /// <returns>
-        /// Chrome executable path.
-        /// </returns>
-        internal static async Task<string> TryToDownloadBrowser(string? customChromeDir)
-        {
-            string path = string.IsNullOrWhiteSpace(customChromeDir) ? DEFAULT_CHROME_PATH : customChromeDir;
-            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path });
-            var revision = await browserFetcher.GetRevisionInfoAsync();
-
-            if (!revision.Local)
-            {
-                Log("\nIt may take some time on the first launch, because it will need to download a Chrome executable (~450mb).\n" +
-                      "If this process takes too much time, ensure you have a good internet connection (timeout = 20 minutes).\n");
-
-                Log("\nDownloading browser... ");
-                await browserFetcher.DownloadAsync();
-                Success("OK");
-            }
-
-            return revision.ExecutablePath;
-        }
 
         /// <summary>
         /// Log and return true
@@ -73,7 +52,7 @@ namespace CharacterAI.Services
         {
             try
             {
-                string fileName = $"{CD}{slash}log.txt";
+                string fileName = $"{CD}{SC}log.txt";
 
                 if (!File.Exists(fileName))
                     File.Create(fileName);
@@ -83,37 +62,57 @@ namespace CharacterAI.Services
             catch { Failure("Woops."); }
         }
 
-        internal static dynamic BasicCallContent(Character charInfo, string msg, string? imgPath, string historyId)
+        /// <summary>
+        /// Here is listed the whole list of all known payload parameters.
+        /// Some of these are useless, some seems to be not really used yet in actual API, some do simply have unknown purpose,
+        /// thus they are either commented or set with default value taken from cai site.
+        /// </summary>
+        internal static dynamic BasicCallContent(string characterId, string characterTgt, string msg, string? imgPath, string historyId)
         {
             dynamic content = new ExpandoObject();
 
+            content.character_external_id = characterId;
+            content.history_external_id = historyId;
+            content.text = msg;
+            content.tgt = characterTgt;
+
             if (!string.IsNullOrEmpty(imgPath))
             {
+                content.image_description = "";
                 content.image_description_type = "AUTO_IMAGE_CAPTIONING";
                 content.image_origin_type = "UPLOADED";
                 content.image_rel_path = imgPath;
             }
 
-            content.character_external_id = charInfo.Id!;
-            content.chunks_to_pad = 8;
-            //content.enable_tti = true; // have no idea what is it
+            // Unknown, unused and default params
             content.give_room_introductions = true;
-            content.history_external_id = historyId;
-            content.is_proactive = false; // have no idea what is it
-            content.num_candidates = 1; // have no idea what is it
+            //initial_timeout : null
+            //insert_beginning : null
+            content.is_proactive = false;
+            content.mock_response = false;
+            //model_properties_version_keys : ""
+            //model_properties_version_keys : ""
+            //model_server_address : null
+            content.num_candidates = 1;
+            //override_prefix : null
+            //override_rank : null
+            //prefix_limit : null
+            //prefix_token_limit : null
+            //rank_candidates : null
             content.ranking_method = "random";
-            content.staging = false; // have no idea what is it
+            //retry_last_user_msg_uuid : null
+            content.CallCharacterAsyncstaging = false;
             content.stream_every_n_steps = 16;
-            content.text = msg;
-            content.tgt = charInfo.Tgt!;
+            //stream_params : null
+            //unsanitized_characters : null
             content.voice_enabled = false;
-
+           
             return content;
         }
 
         internal static void ClearTemps()
         {
-            try { Directory.Delete($"{CD}{slash}puppeteer-temps", true); } catch { }
+            try { Directory.Delete($"{CD}{SC}puppeteer-temps", true); } catch { }
         }
     }
 }
