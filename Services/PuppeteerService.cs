@@ -95,7 +95,7 @@ namespace CharacterAI.Services
             catch(Exception e) { Failure("Failed to kill browser.", e: e); }
         }
 
-        internal async Task<PuppeteerResponse> RequestGetAsync(string url)
+        internal async Task<PuppeteerResponse> RequestGetAsync(string url, string? customAuthToken = null)
         {
             if (Browser is null)
             {
@@ -106,7 +106,7 @@ namespace CharacterAI.Services
             var page = await Browser.NewPageAsync();
             await page.SetRequestInterceptionAsync(true);
 
-            page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get, "application/json");
+            page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get, "application/json", customAuthToken);
 
             var response = await page.GoToAsync(url);
             var content = await response.TextAsync();
@@ -115,7 +115,7 @@ namespace CharacterAI.Services
             return new PuppeteerResponse(content, response.Ok);
         }
 
-        internal async Task<PuppeteerResponse> RequestPostAsync(string url, dynamic? data = null, string contentType = "application/json")
+        internal async Task<PuppeteerResponse> RequestPostAsync(string url, dynamic? data = null, string contentType = "application/json", string? customAuthToken = null)
         {
             if (Browser is null)
             {
@@ -126,7 +126,7 @@ namespace CharacterAI.Services
             var page = await Browser.NewPageAsync();
             await page.SetRequestInterceptionAsync(true);
 
-            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, contentType);
+            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, contentType, customAuthToken);
 
             var response = await page.GoToAsync(url);
             var content = await response.TextAsync();
@@ -135,7 +135,7 @@ namespace CharacterAI.Services
             return new PuppeteerResponse(content, response.Ok);
         }
 
-        internal async Task<PuppeteerResponse> RequestPostWithDownloadAsync(string url, dynamic? data = null)
+        internal async Task<PuppeteerResponse> RequestPostWithDownloadAsync(string url, dynamic? data = null, string? customAuthToken = null)
         {
             if (Browser is null)
             {
@@ -154,7 +154,7 @@ namespace CharacterAI.Services
             await page.SetRequestInterceptionAsync(true);
             await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", downloadPath });
 
-            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json");
+            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json", customAuthToken);
 
             try { await page.GoToAsync(url); } // it will always throw an exception
             catch (NavigationException)
@@ -212,7 +212,7 @@ namespace CharacterAI.Services
             IsReloading = false;
         }
 
-        internal async Task<FetchResponse> FetchRequestAsync(string url, string method, dynamic? data = null, string contentType = "application/json")
+        internal async Task<FetchResponse> FetchRequestAsync(string url, string method, dynamic? data = null, string contentType = "application/json", string? customAuthToken = null)
         {
             if (Browser is null || SearchPage is null)
             {
@@ -227,7 +227,7 @@ namespace CharacterAI.Services
             "       { " +
             "           'accept': 'application/json, text/plain, */*', " +
             "           'accept-encoding': 'gzip, deflate, br'," +
-            $"          'authorization': 'Token {_caiToken}', " +
+            $"          'authorization': 'Token {customAuthToken ?? _caiToken}', " +
             $"          'content-type': '{contentType}', " +
             $"          'origin': '{url}' " +
             "       }" + (data is null ? "" :
@@ -245,7 +245,7 @@ namespace CharacterAI.Services
                 if (fetchResponse.InQueue)
                 {
                     await TryToLeaveQueue(log: false);
-                    fetchResponse = await FetchRequestAsync(url, method, data, contentType);
+                    fetchResponse = await FetchRequestAsync(url, method, data, contentType, customAuthToken);
                 }
 
                 return fetchResponse;
@@ -312,10 +312,10 @@ namespace CharacterAI.Services
             }
         }
 
-        private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method, string contentType)
+        private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method, string contentType, string? customAuthToken = null)
         {
             var r = args.Request;
-            var payload = CreateRequestPayload(method, data, contentType, _caiToken);
+            var payload = CreateRequestPayload(method, data, contentType, customAuthToken ?? _caiToken);
 
             await r.ContinueAsync(payload);
         }
