@@ -26,7 +26,7 @@ namespace CharacterAI
         public string UserToken { get; }
         public bool CAIplusMode { get; }
 
-        private PuppeteerService _puppeteerService;
+        private readonly PuppeteerService _puppeteerService;
 
         public async Task LaunchBrowserAsync(bool killDuplicates)
             => await _puppeteerService.LaunchBrowserAsync(killDuplicates);
@@ -38,7 +38,7 @@ namespace CharacterAI
         /// Send message and get response
         /// </summary>
         /// <returns>new CharacterResponse()</returns>
-        public async Task<CharacterResponse> CallCharacterAsync(string characterId, string characterTgt, string historyId, string message = "", string? imagePath = null, string? primaryMsgUuId = null, string? parentMsgUuId = null, string? customAuthToken = null)
+        public async Task<CharacterResponse> CallCharacterAsync(string characterId, string characterTgt, string historyId, string message = "", string? imagePath = null, string? primaryMsgUuId = null, string? parentMsgUuId = null, string? customAuthToken = null, bool? customPlusMode = null)
         {
             while (true)
             {
@@ -62,12 +62,12 @@ namespace CharacterAI
                 contentDynamic.seen_msg_uuids = new string[] { primaryMsgUuId };
             }
 
-            string url = $"https://{(CAIplusMode ? "plus" : "beta" )}.character.ai/chat/streaming/";
-            FetchResponse fetchResponse = await _puppeteerService.FetchRequestAsync(url, "POST", contentDynamic, customAuthToken);
+            string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CAIplusMode) ? "plus" : "beta" )}.character.ai/chat/streaming/";
+            FetchResponse fetchResponse = await _puppeteerService.FetchRequestAsync(url, "POST", contentDynamic, customAuthToken: customAuthToken);
 
             if (fetchResponse.IsBlocked)
             {   // Fallback on slower but more stable request method
-                var puppeteerResponse = await _puppeteerService.RequestPostWithDownloadAsync(url, contentDynamic, customAuthToken);
+                var puppeteerResponse = await _puppeteerService.RequestPostWithDownloadAsync(url, contentDynamic, customAuthToken: customAuthToken);
                 return new CharacterResponse(puppeteerResponse);
             }
 
@@ -78,9 +78,9 @@ namespace CharacterAI
         /// Get info about character
         /// </summary>
         /// <returns>new Character()</returns>
-        public async Task<Character> GetInfoAsync(string characterId, string? customAuthToken = null)
+        public async Task<Character> GetInfoAsync(string characterId, string? customAuthToken = null, bool? customPlusMode = null)
         {
-            string url = $"https://{(CAIplusMode ? "plus" : "beta" )}.character.ai/chat/character/info/";
+            string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CAIplusMode) ? "plus" : "beta" )}.character.ai/chat/character/info/";
             var data = new Dictionary<string, string> { { "external_id", characterId } };
             var response = await _puppeteerService.RequestPostAsync(url, data, customAuthToken: customAuthToken);
 
@@ -100,9 +100,9 @@ namespace CharacterAI
             return new Character(character);
         }
 
-        public async Task<string?> GetLastChatAsync(string characterId, string? customAuthToken = null)
+        public async Task<string?> GetLastChatAsync(string characterId, string? customAuthToken = null, bool? customPlusMode = null)
         {
-            string url = $"https://{(CAIplusMode ? "plus" : "beta" )}.character.ai/chat/history/continue/";
+            string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CAIplusMode) ? "plus" : "beta" )}.character.ai/chat/history/continue/";
 
             var data = new FormUrlEncodedContent(new Dictionary<string, string> {
                 { "character_external_id", characterId }
@@ -120,16 +120,16 @@ namespace CharacterAI
                 return JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id;
 
             await Task.Delay(5000);
-            return await CreateNewChatAsync(characterId, customAuthToken);
+            return await CreateNewChatAsync(characterId, customAuthToken, customPlusMode);
         }
 
         /// <summary>
         /// Create new chat with a character
         /// </summary>
         /// <returns>returns chat_history_id if successful; null if fails.</returns>
-        public async Task<string?> CreateNewChatAsync(string characterId, string? customAuthToken = null)
+        public async Task<string?> CreateNewChatAsync(string characterId, string? customAuthToken = null, bool? customPlusMode = null)
         {
-            string url = $"https://{(CAIplusMode ? "plus" : "beta" )}.character.ai/chat/history/create/";
+            string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CAIplusMode) ? "plus" : "beta" )}.character.ai/chat/history/create/";
             var data = new Dictionary<string, string> {
                 { "character_external_id", characterId }
             };
@@ -178,9 +178,9 @@ namespace CharacterAI
         //}
 
         // Search for a character
-        public async Task<SearchResponse> SearchAsync(string query, string? customAuthToken = null)
+        public async Task<SearchResponse> SearchAsync(string query, string? customAuthToken = null, bool? customPlusMode = null)
         {
-            string url = $"https://{(CAIplusMode ? "plus" : "beta" )}.character.ai/chat/characters/search/?query={query}";
+            string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CAIplusMode) ? "plus" : "beta" )}.character.ai/chat/characters/search/?query={query}";
             var response = await _puppeteerService.RequestGetAsync(url, customAuthToken);
             if (response.InQueue)
             {
@@ -198,11 +198,11 @@ namespace CharacterAI
         /// <returns>
         /// image path if successful; null if fails
         /// </returns>
-        public async Task<string?> UploadImageAsync(byte[] img, string fileName = "image.jpeg", string? customAuthToken = null)
+        public async Task<string?> UploadImageAsync(byte[] img, string fileName = "image.jpeg", string? customAuthToken = null, bool? customPlusMode = null)
         {
             return null;
 
-            string url = $"https://{(CAIplusMode ? "plus" : "beta" )}.character.ai/chat/upload-image/";
+            string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CAIplusMode) ? "plus" : "beta" )}.character.ai/chat/upload-image/";
 
             if (!fileName.Contains('.')) fileName += ".jpeg";
             string ext = fileName.Split(".").Last();
