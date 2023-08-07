@@ -14,13 +14,13 @@ namespace CharacterAI
         /// <param name="userToken">Your c.ai user token</param>
         /// <param name="caiPlusMode">Enable if you have c.ai+ and want the integration to use "plus.character.ai" subdomain instead of "beta.character.ai"; disabled by default.</param>
         /// <param name="browserType">"chrome" or "firefox"; "chrome is used by default.</param>
-        /// <param name="customBrowserDirectory">Directory where the browser will be downloaded to.</param>
-        /// <param name="customBrowserExecutablePath">Full path to the chrome/chromium executabe binary file.</param>
-        public CharacterAIClient(string userToken, bool? caiPlusMode, string? browserType, string? customBrowserDirectory, string? customBrowserExecutablePath)
+        /// <param name="customBrowserDirectory">Directory where the browser will be downloaded to. Not required.</param>
+        /// <param name="customBrowserExecutablePath">Full path to the chrome/chromium executabe binary file. Not required.</param>
+        public CharacterAIClient(string userToken, bool caiPlusMode = false, string browserType = "chrome", string? customBrowserDirectory = null, string? customBrowserExecutablePath = null)
         {
-            CAIplusMode = caiPlusMode ?? false;
             UserToken = userToken;
-            _puppeteerService = new(caiPlusMode ?? false, userToken, browserType ?? "chrome", customBrowserDirectory, customBrowserExecutablePath);
+            CAIplusMode = caiPlusMode;
+            _puppeteerService = new(userToken, caiPlusMode, browserType, customBrowserDirectory, customBrowserExecutablePath);
         }
 
         public string UserToken { get; }

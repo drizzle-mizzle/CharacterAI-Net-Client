@@ -22,7 +22,7 @@ namespace CharacterAI.Services
         private readonly string _caiToken;
         private readonly List<int> _requestQueue;
 
-        public PuppeteerService(bool caiPlusMode, string caiToken, string browserType, string? customBrowserDirectory, string? customBrowserExecutablePath)
+        public PuppeteerService(string caiToken, bool caiPlusMode, string browserType, string? customBrowserDirectory, string? customBrowserExecutablePath)
         {
             _caiPlusMode = caiPlusMode;
             _caiToken = caiToken;
