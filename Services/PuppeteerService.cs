@@ -229,7 +229,7 @@ namespace CharacterAI.Services
             "           'accept-encoding': 'gzip, deflate, br'," +
             $"          'authorization': 'Token {customAuthToken ?? _caiToken}', " +
             $"          'content-type': '{contentType}', " +
-            $"          'origin': '{url}' " +
+            $"          'origin': '{url}', " +
             $"          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'" +
             "       }" + (data is null ? "" :
             $"    , body: JSON.stringify({JsonConvert.SerializeObject(data)}) ") +
