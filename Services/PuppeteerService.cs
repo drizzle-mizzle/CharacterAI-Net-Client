@@ -14,25 +14,22 @@ namespace CharacterAI.Services
     {
         public IBrowser? Browser { get; set; }
         internal IPage? SearchPage { get; set; }
-        public string BROWSER_TYPE { get; }
-        public string WORKING_DIR { get; }
         public string EXEC_PATH { get; }
         internal bool IsInactive { get; set; } = true;
 
         private readonly bool _caiPlusMode;
         private readonly string _caiToken;
-        private readonly List<int> _requestQueue;
+        private readonly List<int> _requestQueue = new();
 
-        public PuppeteerService(string caiToken, bool caiPlusMode, string browserType, string? customBrowserDirectory, string? customBrowserExecutablePath)
+        public PuppeteerService(string caiToken, bool caiPlusMode, string? customBrowserDirectory, string? customBrowserExecutablePath)
         {
             _caiPlusMode = caiPlusMode;
             _caiToken = caiToken;
-            var dir = string.IsNullOrEmpty(customBrowserDirectory) ? null : customBrowserDirectory;
-            var exe = string.IsNullOrEmpty(customBrowserExecutablePath) ? null : customBrowserExecutablePath;
-            BROWSER_TYPE = browserType;
-            WORKING_DIR = dir ?? $"{CD}{SC}puppeteer-{browserType}";
-            EXEC_PATH = exe ?? TryToDownloadBrowser(WORKING_DIR, BROWSER_TYPE).Result;
-            _requestQueue = new();
+
+            var dir = string.IsNullOrWhiteSpace(customBrowserDirectory) ? null : customBrowserDirectory;
+            var exe = string.IsNullOrWhiteSpace(customBrowserExecutablePath) ? null : customBrowserExecutablePath;
+
+            EXEC_PATH = exe ?? TryToDownloadBrowserAsync(dir ?? $"{CD}{SC}puppeteer-chrome").Result;
         }
 
         /// <param name="killDuplicates">Kill all other browser processes launched from this folder</param>
@@ -46,12 +43,11 @@ namespace CharacterAI.Services
             var pex = new PuppeteerExtra();
             var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(1));
 
-            var chromeArgs = new[]
+            var args = new[]
             {
                 "--no-default-browser-check", "--no-sandbox", "--disable-setuid-sandbox", "--no-first-run", "--single-process",
                 "--disable-default-apps", "--disable-features=Translate", "--disable-infobars", "--disable-dev-shm-usage",
-                "--mute-audio", "--ignore-certificate-errors", "--use-gl=egl",
-                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+                "--mute-audio", "--ignore-certificate-errors", "--use-gl=egl"
             };
 
             Browser = await pex.Use(stealthPlugin).LaunchAsync(new()
@@ -59,7 +55,7 @@ namespace CharacterAI.Services
                 Headless = true,
                 ExecutablePath = EXEC_PATH,
                 IgnoredDefaultArgs = new[] { "--disable-extensions" }, // https://github.com/puppeteer/puppeteer/blob/main/docs/troubleshooting.md#chrome-headless-doesnt-launch-on-windows
-                Args = BROWSER_TYPE == "chrome" ? chromeArgs : null,
+                Args = args,
                 Timeout = 1_200_000 // 15 minutes
             });
             SearchPage = await Browser.NewPageAsync();
@@ -86,7 +82,7 @@ namespace CharacterAI.Services
                 var runningProcesses = Process.GetProcesses();
                 foreach (var process in runningProcesses)
                 {
-                    bool isPuppeteerChrome = process.ProcessName == BROWSER_TYPE &&
+                    bool isPuppeteerChrome = process.ProcessName.Contains("chrome") &&
                                              process.MainModule != null &&
                                              process.MainModule.FileName == EXEC_PATH;
 
@@ -177,7 +173,7 @@ namespace CharacterAI.Services
                 _ = page.CloseAsync();
                 _requestQueue.Remove((int)requestId);
 
-                var content = await System.IO.File.ReadAllTextAsync(responsePath);
+                var content = await File.ReadAllTextAsync(responsePath);
                 try { Directory.Delete(downloadPath, recursive: true); } catch { };
 
                 if (string.IsNullOrEmpty(content))
@@ -234,6 +230,7 @@ namespace CharacterAI.Services
             $"          'authorization': 'Token {customAuthToken ?? _caiToken}', " +
             $"          'content-type': '{contentType}', " +
             $"          'origin': '{url}' " +
+            $"          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'" +
             "       }" + (data is null ? "" :
             $"    , body: JSON.stringify({JsonConvert.SerializeObject(data)}) ") +
             "   });" +
@@ -262,13 +259,12 @@ namespace CharacterAI.Services
         }
 
         /// <returns>
-        /// Chrome executable path.
+        /// Browser executable path.
         /// </returns>
-        internal static async Task<string> TryToDownloadBrowser(string path, string type)
+        internal static async Task<string> TryToDownloadBrowserAsync(string path)
         {
-            var browser = type == "chrome" ? SupportedBrowser.Chrome : SupportedBrowser.Firefox;
-            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path, Browser = browser });
-            
+            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path, Browser = SupportedBrowser.Chrome });
+
             if (browserFetcher.GetInstalledBrowsers().FirstOrDefault() is InstalledBrowser ib)
             {
                 return ib.GetExecutablePath();
@@ -277,32 +273,41 @@ namespace CharacterAI.Services
             Log($"\nDownloading browser...\nPath: ");
             Log($"{path}\n", ConsoleColor.Yellow);
 
-            if (!await browserFetcher.CanDownloadAsync(browserFetcher.BaseUrl))
-                Failure("Failed to download browser");
-
             int top = Console.GetCursorPosition().Top;
-
             int progress = 0;
+
             browserFetcher.DownloadProgressChanged += (sender, args) =>
             {
                 var pp = args.ProgressPercentage;
                 if (pp <= progress) return;
 
                 progress = pp;
-
                 Console.SetCursorPosition(0, top);
-                Log($"Progress: [{new string('=', pp / 2)}{new string(' ', 50 - (pp / 2))}] ");
 
-                if (pp < 100) Log($"{pp}% ");
-                else Log("100% ", ConsoleColor.Green);
+                string logProgress = $"Progress: [{new string('=', pp / 2)}{new string(' ', 50 - (pp / 2))}] ";
+                int l = logProgress.Length;
+                Log(logProgress);
 
-                string log = $"({Math.Round(args.BytesReceived / 1024000.0f, 2)}/{Math.Round(args.TotalBytesToReceive / 1024000.0f, 2)} mb)";
-                Log(log, ConsoleColor.Yellow);
-                Log(new string(' ', Console.WindowWidth - log.Length));
+                if (pp < 100)
+                {
+                    string oo = $"{pp}% ";
+                    l += oo.Length;
+                    Log(oo);
+                }
+                else
+                {
+                    l += 5;
+                    Log("100% ", ConsoleColor.Green);
+                }
+
+                string mb = $"({Math.Round(args.BytesReceived / 1024000.0f, 2)}/{Math.Round(args.TotalBytesToReceive / 1024000.0f, 2)} mb)";
+                l += mb.Length;
+                Log(mb, ConsoleColor.Yellow);
+                Log(new string(' ', Console.WindowWidth - l));
             };
-            await browserFetcher.DownloadAsync();
+            var browser = await browserFetcher.DownloadAsync();
 
-            return browserFetcher.GetInstalledBrowsers().First().GetExecutablePath();
+            return browser.GetExecutablePath();
         }
 
         private async Task TryToOpenCaiPage()
