@@ -6,6 +6,7 @@ using PuppeteerSharp;
 using System.Diagnostics;
 using CharacterAI.Models;
 using static CharacterAI.Services.CommonService;
+using PuppeteerSharp.BrowserData;
 
 namespace CharacterAI.Services
 {
@@ -16,7 +17,7 @@ namespace CharacterAI.Services
         public string BROWSER_TYPE { get; }
         public string WORKING_DIR { get; }
         public string EXEC_PATH { get; }
-        internal bool IsReloading { get; set; } = true;
+        internal bool IsInactive { get; set; } = true;
 
         private readonly bool _caiPlusMode;
         private readonly string _caiToken;
@@ -37,10 +38,11 @@ namespace CharacterAI.Services
         /// <param name="killDuplicates">Kill all other browser processes launched from this folder</param>
         public async Task LaunchBrowserAsync(bool killDuplicates)
         {
-            IsReloading = true;
             if (killDuplicates) KillBrowser();
 
+            IsInactive = true;
             Log("\nLaunching browser... ");
+
             var pex = new PuppeteerExtra();
             var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(1));
 
@@ -60,23 +62,25 @@ namespace CharacterAI.Services
                 Args = BROWSER_TYPE == "chrome" ? chromeArgs : null,
                 Timeout = 1_200_000 // 15 minutes
             });
-
-            Success("OK");
-
             SearchPage = await Browser.NewPageAsync();
 
+            Success("OK");
             Log("Opening character.ai page... ");
             await TryToOpenCaiPage();
 
-            IsReloading = false;
             Log("OK", ConsoleColor.Green);
-            if (_caiPlusMode) Log($" [c.ai+ Mode Enabled]\n", ConsoleColor.Yellow);
+            if (_caiPlusMode)
+            {
+                Log($" [c.ai+ Mode Enabled]\n", ConsoleColor.Yellow);
+            }
+
             Log("\n");
+            IsInactive = false;
         }
 
         public void KillBrowser()
         {
-            IsReloading = true;
+            IsInactive = true;
             try
             {
                 var runningProcesses = Process.GetProcesses();
@@ -99,7 +103,7 @@ namespace CharacterAI.Services
         {
             if (Browser is null)
             {
-                Failure("You need to launch a browser first!");
+                Failure("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
@@ -119,7 +123,7 @@ namespace CharacterAI.Services
         {
             if (Browser is null)
             {
-                Failure("You need to launch a browser first!");
+                Failure("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
@@ -139,7 +143,7 @@ namespace CharacterAI.Services
         {
             if (Browser is null)
             {
-                Failure("You need to launch a browser first!");
+                Failure("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
@@ -166,7 +170,7 @@ namespace CharacterAI.Services
                 for (int i = 0; i < 30; i++)
                 {
                     await Task.Delay(3000);
-                    if (System.IO.File.Exists(responsePath)) break;
+                    if (File.Exists(responsePath)) break;
                     if (i == 30) return new PuppeteerResponse(null, false);
                 }
 
@@ -195,7 +199,7 @@ namespace CharacterAI.Services
         /// </returns>
         internal async Task TryToLeaveQueue(bool log = true)
         {
-            IsReloading = true;
+            IsInactive = true;
             if (SearchPage is null) return;
 
             await Task.Delay(15000);
@@ -209,14 +213,14 @@ namespace CharacterAI.Services
                 if (log) Log(":(\nWait...");
                 await TryToLeaveQueue(log);
             }
-            IsReloading = false;
+            IsInactive = false;
         }
 
         internal async Task<FetchResponse> FetchRequestAsync(string url, string method, dynamic? data = null, string contentType = "application/json", string? customAuthToken = null)
         {
             if (Browser is null || SearchPage is null)
             {
-                Failure("You need to launch a browser first!");
+                Failure("You need to launch the browser first!");
                 return new FetchResponse(null);
             }
 
@@ -262,40 +266,43 @@ namespace CharacterAI.Services
         /// </returns>
         internal static async Task<string> TryToDownloadBrowser(string path, string type)
         {
-            var product = type == "chrome" ? Product.Chrome : Product.Firefox;
-            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path, Product = product });
-            var revision = await browserFetcher.GetRevisionInfoAsync();
-
-            if (!revision.Local)
+            var browser = type == "chrome" ? SupportedBrowser.Chrome : SupportedBrowser.Firefox;
+            using var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions() { Path = path, Browser = browser });
+            
+            if (browserFetcher.GetInstalledBrowsers().FirstOrDefault() is InstalledBrowser ib)
             {
-                Log($"\nDownloading browser...\nPath: ");
-                Log($"{path}\n", ConsoleColor.Yellow);
-
-                if (!await browserFetcher.CanDownloadAsync(revision.Revision))
-                    Failure("Error. Not available.");
-
-                int top = Console.GetCursorPosition().Top;
-
-                int progress = 0;
-                browserFetcher.DownloadProgressChanged += (sender, args) =>
-                {
-                    var pp = args.ProgressPercentage;
-                    if (pp <= progress) return;
-
-                    progress = pp;
-
-                    Console.SetCursorPosition(0, top);
-                    Log($"Progress: [{new string('=', pp / 2)}{new string(' ', 50 - (pp / 2))}] ");
-                    if (pp < 100) Log($"{pp}% "); else Log("100% ", ConsoleColor.Green);
-
-                    Log($"({Math.Round(args.BytesReceived / 1024000.0f, 2)}/{Math.Round(args.TotalBytesToReceive / 1024000.0f, 2)} mb)", ConsoleColor.Yellow);
-                    Log("                   ");
-                };
-
-                await browserFetcher.DownloadAsync();                
+                return ib.GetExecutablePath();
             }
 
-            return revision.ExecutablePath;
+            Log($"\nDownloading browser...\nPath: ");
+            Log($"{path}\n", ConsoleColor.Yellow);
+
+            if (!await browserFetcher.CanDownloadAsync(browserFetcher.BaseUrl))
+                Failure("Failed to download browser");
+
+            int top = Console.GetCursorPosition().Top;
+
+            int progress = 0;
+            browserFetcher.DownloadProgressChanged += (sender, args) =>
+            {
+                var pp = args.ProgressPercentage;
+                if (pp <= progress) return;
+
+                progress = pp;
+
+                Console.SetCursorPosition(0, top);
+                Log($"Progress: [{new string('=', pp / 2)}{new string(' ', 50 - (pp / 2))}] ");
+
+                if (pp < 100) Log($"{pp}% ");
+                else Log("100% ", ConsoleColor.Green);
+
+                string log = $"({Math.Round(args.BytesReceived / 1024000.0f, 2)}/{Math.Round(args.TotalBytesToReceive / 1024000.0f, 2)} mb)";
+                Log(log, ConsoleColor.Yellow);
+                Log(new string(' ', Console.WindowWidth - log.Length));
+            };
+            await browserFetcher.DownloadAsync();
+
+            return browserFetcher.GetInstalledBrowsers().First().GetExecutablePath();
         }
 
         private async Task TryToOpenCaiPage()

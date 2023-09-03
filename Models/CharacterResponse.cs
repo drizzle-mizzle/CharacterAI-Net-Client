@@ -30,7 +30,7 @@ namespace CharacterAI.Models
             if (!response.IsSuccessful)
             {
                 Failure(response?.Status, response?.Content);
-                return $"{WARN_SIGN} Failed to fetch response.\n(probably, CharacterAI servers are down, try again later)";
+                return $"Failed to fetch response";
             }
             
             string content = response.Content;
@@ -70,7 +70,6 @@ namespace CharacterAI.Models
             var reply = jReplies.First() as dynamic;
             return new Reply()
             {
-                //Id = (ulong)(reply?.id ?? 0),
                 UuId = (string)(reply?.uuid ?? ""),
                 Text = reply?.text ?? "",
                 ImageRelPath = reply?.image_rel_path

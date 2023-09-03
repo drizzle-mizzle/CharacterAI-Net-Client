@@ -42,7 +42,7 @@ namespace CharacterAI
         {
             while (true)
             {
-                if (_puppeteerService.IsReloading) await Task.Delay(3000);
+                if (_puppeteerService.IsInactive) await Task.Delay(3000);
                 else break;
             }
 
