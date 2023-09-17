@@ -12,16 +12,16 @@ namespace CharacterAI.Services
 {
     public class PuppeteerService
     {
-        public IBrowser? Browser { get; set; }
-        internal IPage? SearchPage { get; set; }
         public string EXEC_PATH { get; }
-        internal bool IsInactive { get; set; } = true;
+
+        private IBrowser? _browser;
+        private IPage? _searchPage;
 
         private readonly bool _caiPlusMode;
         private readonly string _caiToken;
         private readonly List<int> _requestQueue = new();
 
-        public PuppeteerService(string caiToken, bool caiPlusMode, string? customBrowserDirectory, string? customBrowserExecutablePath)
+        internal protected PuppeteerService(string caiToken, bool caiPlusMode, string? customBrowserDirectory, string? customBrowserExecutablePath)
         {
             _caiPlusMode = caiPlusMode;
             _caiToken = caiToken;
@@ -32,51 +32,52 @@ namespace CharacterAI.Services
             EXEC_PATH = exe ?? TryToDownloadBrowserAsync(dir ?? $"{CD}{SC}puppeteer-chrome").Result;
         }
 
-        /// <param name="killDuplicates">Kill all other browser processes launched from this folder</param>
-        public async Task LaunchBrowserAsync(bool killDuplicates)
+        /// <param name="killDuplicates">Kill all other browser processes launched from this folder.</param>
+        internal protected async Task LaunchBrowserAsync(bool killDuplicates)
         {
             if (killDuplicates) KillBrowser();
 
-            IsInactive = true;
-            Log("\nLaunching browser... ");
-
             var pex = new PuppeteerExtra();
-            var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(1));
-
             var args = new[]
             {
                 "--no-default-browser-check", "--no-sandbox", "--disable-setuid-sandbox", "--no-first-run", "--single-process",
                 "--disable-default-apps", "--disable-features=Translate", "--disable-infobars", "--disable-dev-shm-usage",
                 "--mute-audio", "--ignore-certificate-errors", "--use-gl=egl"
             };
-
-            Browser = await pex.Use(stealthPlugin).LaunchAsync(new()
+            var launchOptions = new LaunchOptions()
             {
-                Headless = true,
-                ExecutablePath = EXEC_PATH,
-                IgnoredDefaultArgs = new[] { "--disable-extensions" }, // https://github.com/puppeteer/puppeteer/blob/main/docs/troubleshooting.md#chrome-headless-doesnt-launch-on-windows
                 Args = args,
-                Timeout = 1_200_000 // 15 minutes
-            });
-            SearchPage = await Browser.NewPageAsync();
-
-            Success("OK");
-            Log("Opening character.ai page... ");
-            await TryToOpenCaiPage();
-
-            Log("OK", ConsoleColor.Green);
-            if (_caiPlusMode)
+                Headless = true,
+                Timeout = 1_200_000, // 15 minutes
+                ExecutablePath = EXEC_PATH,
+                IgnoredDefaultArgs = new[] { "--disable-extensions" } // https://github.com/puppeteer/puppeteer/blob/main/docs/troubleshooting.md#chrome-headless-doesnt-launch-on-windows
+            };
+            var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(1));
+            
+            try
             {
-                Log($" [c.ai+ Mode Enabled]\n", ConsoleColor.Yellow);
-            }
+                Log("\nLaunching browser... ");
+                _browser = await pex.Use(stealthPlugin).LaunchAsync(launchOptions);
+                Success("OK");
 
-            Log("\n");
-            IsInactive = false;
+                Log("Opening character.ai page... ");
+                _searchPage = await _browser.NewPageAsync();
+                await TryToOpenCaiPage();
+                Log("OK", ConsoleColor.Green);
+
+                if (_caiPlusMode) Log($" [c.ai+ Mode Enabled]\n\n", ConsoleColor.Yellow);
+                else Log("\n");
+            }
+            catch (Exception e)
+            {
+                Failure("Fail", e: e);
+                Log("\nTrying again...\n");
+                await LaunchBrowserAsync(killDuplicates);
+            }
         }
 
         public void KillBrowser()
         {
-            IsInactive = true;
             try
             {
                 var runningProcesses = Process.GetProcesses();
@@ -89,23 +90,42 @@ namespace CharacterAI.Services
                     if (isPuppeteerChrome) process.Kill();
                 }
 
-                Browser = null;
-                SearchPage = null;
+                _browser = null;
+                _searchPage = null;
             }
-            catch(Exception e) { Failure("Failed to kill browser.", e: e); }
+            catch(Exception e)
+            {
+                Failure("Failed to kill browser. This error won't affect the workflow of your application, " +
+                        "but if you will relaunch your application and see this error again, it will mean " +
+                        "that the old Puppeteer browser process probably is still running in the background " +
+                        "and consumes the memory of your machine.\n",
+                        e: e);
+            }
         }
 
         internal async Task<PuppeteerResponse> RequestGetAsync(string url, string? customAuthToken = null)
         {
-            if (Browser is null)
+            if (_browser is null)
             {
                 Failure("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
-            var page = await Browser.NewPageAsync();
-            await page.SetRequestInterceptionAsync(true);
+            IPage page;
+            try
+            {
+                page = await _browser.NewPageAsync();
+            }
+            catch
+            {
+                lock (_browser)
+                {
+                    LaunchBrowserAsync(true).Wait();
+                    return RequestGetAsync(url, customAuthToken).Result;
+                }
+            }
 
+            await page.SetRequestInterceptionAsync(true);
             page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get, "application/json", customAuthToken);
 
             var response = await page.GoToAsync(url);
@@ -117,15 +137,27 @@ namespace CharacterAI.Services
 
         internal async Task<PuppeteerResponse> RequestPostAsync(string url, dynamic? data = null, string contentType = "application/json", string? customAuthToken = null)
         {
-            if (Browser is null)
+            if (_browser is null)
             {
                 Failure("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
-            var page = await Browser.NewPageAsync();
-            await page.SetRequestInterceptionAsync(true);
+            IPage page;
+            try
+            {
+                page = await _browser.NewPageAsync();
+            }
+            catch
+            {
+                lock (_browser)
+                {
+                    LaunchBrowserAsync(true).Wait();
+                    return RequestPostAsync(url, data, contentType, customAuthToken).Result;
+                }
+            }
 
+            await page.SetRequestInterceptionAsync(true);
             page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, contentType, customAuthToken);
 
             var response = await page.GoToAsync(url);
@@ -137,7 +169,7 @@ namespace CharacterAI.Services
 
         internal async Task<PuppeteerResponse> RequestPostWithDownloadAsync(string url, dynamic? data = null, string? customAuthToken = null)
         {
-            if (Browser is null)
+            if (_browser is null)
             {
                 Failure("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
@@ -150,10 +182,22 @@ namespace CharacterAI.Services
             if (Directory.Exists(downloadPath)) Directory.Delete(downloadPath, true);
             Directory.CreateDirectory(downloadPath);
 
-            var page = await Browser.NewPageAsync();
+            IPage page;
+            try
+            {
+                page = await _browser.NewPageAsync();
+            }
+            catch
+            {
+                lock (_browser)
+                {
+                    LaunchBrowserAsync(true).Wait();
+                    return RequestPostWithDownloadAsync(url, data, customAuthToken).Result;
+                }
+            }
+
             await page.SetRequestInterceptionAsync(true);
             await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", downloadPath });
-
             page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json", customAuthToken);
 
             try { await page.GoToAsync(url); } // it will always throw an exception
@@ -185,36 +229,29 @@ namespace CharacterAI.Services
             return new PuppeteerResponse(null, false); // not really needed
         }
 
-        /// <summary>
-        /// Needed so Puppeteer could execute fetch() command in the browser console
-        /// </summary>
-        /// <returns></returns>
-
         /// <returns>
         /// Reloaded page.
         /// </returns>
-        internal async Task TryToLeaveQueue(bool log = true)
+        internal async Task TryToLeaveQueueAsync(bool log = true)
         {
-            IsInactive = true;
-            if (SearchPage is null) return;
+            if (_searchPage is null) return;
 
             await Task.Delay(15000);
             if (log) Log("\n15sec has passed, reloading... ");
 
-            var response = await SearchPage.ReloadAsync();
+            var response = await _searchPage.ReloadAsync();
             string content = await response.TextAsync();
 
             if (content.Contains("Waiting Room"))
             {
                 if (log) Log(":(\nWait...");
-                await TryToLeaveQueue(log);
+                await TryToLeaveQueueAsync(log);
             }
-            IsInactive = false;
         }
 
         internal async Task<FetchResponse> FetchRequestAsync(string url, string method, dynamic? data = null, string contentType = "application/json", string? customAuthToken = null)
         {
-            if (Browser is null || SearchPage is null)
+            if (_browser is null || _searchPage is null)
             {
                 Failure("You need to launch the browser first!");
                 return new FetchResponse(null);
@@ -241,11 +278,13 @@ namespace CharacterAI.Services
 
             try
             {
-                var response = await SearchPage.EvaluateFunctionAsync(jsFunc);
+                var response = await _searchPage.EvaluateFunctionAsync(jsFunc);
                 var fetchResponse = new FetchResponse(response);
                 if (fetchResponse.InQueue)
                 {
-                    await TryToLeaveQueue(log: false);
+                    lock(_searchPage)
+                        TryToLeaveQueueAsync(log: false).Wait();
+
                     fetchResponse = await FetchRequestAsync(url, method, data, contentType, customAuthToken);
                 }
 
@@ -312,15 +351,15 @@ namespace CharacterAI.Services
 
         private async Task TryToOpenCaiPage()
         {
-            if (SearchPage is null) return;
+            if (_searchPage is null) return;
 
-            var response = await SearchPage.GoToAsync($"https://{(_caiPlusMode ? "plus" : "beta")}.character.ai/search?"); // most lightweight page
+            var response = await _searchPage.GoToAsync($"https://{(_caiPlusMode ? "plus" : "beta")}.character.ai/search?"); // most lightweight page
             string content = await response.TextAsync();
 
             if (content.Contains("Waiting Room"))
             {
                 Log("\nYou are now in line. Wait... ");
-                await TryToLeaveQueue();
+                await TryToLeaveQueueAsync();
             }
         }
 
