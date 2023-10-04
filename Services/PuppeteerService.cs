@@ -7,6 +7,8 @@ using System.Diagnostics;
 using CharacterAI.Models;
 using static CharacterAI.Services.CommonService;
 using PuppeteerSharp.BrowserData;
+using System.Security;
+using System.Security.Cryptography.X509Certificates;
 
 namespace CharacterAI.Services
 {
@@ -17,15 +19,10 @@ namespace CharacterAI.Services
         private IBrowser? _browser;
         private IPage? _searchPage;
 
-        private readonly bool _caiPlusMode;
-        private readonly string _caiToken;
         private readonly List<int> _requestQueue = new();
 
-        internal protected PuppeteerService(string caiToken, bool caiPlusMode, string? customBrowserDirectory, string? customBrowserExecutablePath)
+        internal protected PuppeteerService(string? customBrowserDirectory, string? customBrowserExecutablePath)
         {
-            _caiPlusMode = caiPlusMode;
-            _caiToken = caiToken;
-
             var dir = string.IsNullOrWhiteSpace(customBrowserDirectory) ? null : customBrowserDirectory;
             var exe = string.IsNullOrWhiteSpace(customBrowserExecutablePath) ? null : customBrowserExecutablePath;
 
@@ -63,10 +60,7 @@ namespace CharacterAI.Services
                 Log("Opening character.ai page... ");
                 _searchPage = await _browser.NewPageAsync();
                 await TryToOpenCaiPage();
-                Log("OK", ConsoleColor.Green);
-
-                if (_caiPlusMode) Log($" [c.ai+ Mode Enabled]\n\n", ConsoleColor.Yellow);
-                else Log("\n");
+                Log("OK\n", ConsoleColor.Green);
             }
             catch (Exception e)
             {
@@ -103,7 +97,7 @@ namespace CharacterAI.Services
             }
         }
 
-        internal async Task<PuppeteerResponse> RequestGetAsync(string url, string? customAuthToken = null)
+        internal async Task<PuppeteerResponse> RequestGetAsync(string url, string authToken)
         {
             if (_browser is null)
             {
@@ -115,27 +109,26 @@ namespace CharacterAI.Services
             try
             {
                 page = await _browser.NewPageAsync();
+                await page.SetRequestInterceptionAsync(true);
+                page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get, "application/json", authToken);
+
+                var response = await page.GoToAsync(url);
+                var content = await response.TextAsync();
+                _ = page.CloseAsync();
+
+                return new PuppeteerResponse(content, response.Ok);
             }
             catch
             {
                 lock (_browser)
                 {
                     LaunchBrowserAsync(true).Wait();
-                    return RequestGetAsync(url, customAuthToken).Result;
+                    return RequestGetAsync(url, authToken).Result;
                 }
             }
-
-            await page.SetRequestInterceptionAsync(true);
-            page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get, "application/json", customAuthToken);
-
-            var response = await page.GoToAsync(url);
-            var content = await response.TextAsync();
-            _ = page.CloseAsync();
-
-            return new PuppeteerResponse(content, response.Ok);
         }
 
-        internal async Task<PuppeteerResponse> RequestPostAsync(string url, dynamic? data = null, string contentType = "application/json", string? customAuthToken = null)
+        internal async Task<PuppeteerResponse> RequestPostAsync(string url, string authToken, dynamic? data = null, string contentType = "application/json")
         {
             if (_browser is null)
             {
@@ -147,86 +140,106 @@ namespace CharacterAI.Services
             try
             {
                 page = await _browser.NewPageAsync();
+                await page.SetRequestInterceptionAsync(true);
+                page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, contentType, authToken);
+
+                var response = await page.GoToAsync(url);
+                var content = await response.TextAsync();
+                _ = page.CloseAsync();
+
+                return new PuppeteerResponse(content, response.Ok);
             }
             catch
             {
                 lock (_browser)
                 {
                     LaunchBrowserAsync(true).Wait();
-                    return RequestPostAsync(url, data, contentType, customAuthToken).Result;
+                    return RequestPostAsync(url, data, contentType, authToken).Result;
                 }
             }
-
-            await page.SetRequestInterceptionAsync(true);
-            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, contentType, customAuthToken);
-
-            var response = await page.GoToAsync(url);
-            var content = await response.TextAsync();
-            _ = page.CloseAsync();
-
-            return new PuppeteerResponse(content, response.Ok);
         }
 
-        internal async Task<PuppeteerResponse> RequestPostWithDownloadAsync(string url, dynamic? data = null, string? customAuthToken = null)
+        internal async Task<PuppeteerResponse> RequestPostWithDownloadAsync(string url, string authToken, dynamic? data = null)
         {
             if (_browser is null)
             {
                 Failure("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
+
+            var result = new PuppeteerResponse(null, false);
 
             int? requestId = await WaitForTurnAsync();
-            if (requestId is null) return new PuppeteerResponse(null, false);
+            if (requestId is null) return result;
 
-            string downloadPath = $"{CD}{SC}puppeteer-temps{SC}{requestId}";
-            if (Directory.Exists(downloadPath)) Directory.Delete(downloadPath, true);
-            Directory.CreateDirectory(downloadPath);
+            // "download" is a temporary file name where response content is saved
+            string requestPath = $"{CD}{SC}puppeteer-temps{SC}{requestId}";
+            string downloadPath = $"{requestPath}{SC}download";
+
+            // Reacrete directory
+            if (Directory.Exists(requestPath)) Directory.Delete(requestPath, true);
+            Directory.CreateDirectory(requestPath);
 
             IPage page;
             try
             {
                 page = await _browser.NewPageAsync();
+                await page.SetRequestInterceptionAsync(true);
+                await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", requestPath });
+                page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json", authToken);
             }
             catch
             {
                 lock (_browser)
                 {
                     LaunchBrowserAsync(true).Wait();
-                    return RequestPostWithDownloadAsync(url, data, customAuthToken).Result;
+                    return RequestPostWithDownloadAsync(url, data, authToken).Result;
                 }
             }
 
-            await page.SetRequestInterceptionAsync(true);
-            await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", downloadPath });
-            page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json", customAuthToken);
+            string? content = null;
 
-            try { await page.GoToAsync(url); } // it will always throw an exception
+            // It will always throw an exception, but it will perform the request
+            try { await page.GoToAsync(url); }
             catch (NavigationException)
             {
-                // "download" is a temporary file name where response content is saved
-                string responsePath = $"{downloadPath}{SC}download";
-
-                // Wait 90 seconds for the response to download
-                for (int i = 0; i < 30; i++)
-                {
-                    await Task.Delay(3000);
-                    if (File.Exists(responsePath)) break;
-                    if (i == 30) return new PuppeteerResponse(null, false);
-                }
-
-                _ = page.CloseAsync();
-                _requestQueue.Remove((int)requestId);
-
-                var content = await File.ReadAllTextAsync(responsePath);
-                try { Directory.Delete(downloadPath, recursive: true); } catch { };
-
-                if (string.IsNullOrEmpty(content))
-                    return new PuppeteerResponse(null, false);
-
-                return new PuppeteerResponse(content, true);
+                content = await TryToExtractResponseAsync(downloadPath);
             }
 
-            return new PuppeteerResponse(null, false); // not really needed
+            try
+            {
+                _requestQueue.Remove((int)requestId);
+                await page.CloseAsync();
+            }
+            finally
+            {
+                result = new(content, true);
+            }
+
+            return result;
+        }
+
+        private async Task<string?> TryToExtractResponseAsync(string downloadPath)
+        {
+            // Wait 90 seconds for the response to download
+            for (int i = 0; i < 30; i++)
+            {
+                await Task.Delay(3000);
+                if (File.Exists(downloadPath)) break;
+                if (i == 30) return null;
+            }
+
+            try
+            {
+                string content = await File.ReadAllTextAsync(downloadPath);
+                Directory.Delete(downloadPath, recursive: true);
+
+                return content;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <returns>
@@ -249,7 +262,7 @@ namespace CharacterAI.Services
             }
         }
 
-        internal async Task<FetchResponse> FetchRequestAsync(string url, string method, dynamic? data = null, string contentType = "application/json", string? customAuthToken = null)
+        internal async Task<FetchResponse> FetchRequestAsync(string url, string method, string authToken, dynamic? data = null, string contentType = "application/json")
         {
             if (_browser is null || _searchPage is null)
             {
@@ -264,7 +277,7 @@ namespace CharacterAI.Services
             "       { " +
             "           'accept': 'application/json, text/plain, */*', " +
             "           'accept-encoding': 'gzip, deflate, br'," +
-            $"          'authorization': 'Token {customAuthToken ?? _caiToken}', " +
+            $"          'authorization': 'Token {authToken}', " +
             $"          'content-type': '{contentType}', " +
             $"          'origin': '{url}', " +
             $"          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'" +
@@ -282,10 +295,12 @@ namespace CharacterAI.Services
                 var fetchResponse = new FetchResponse(response);
                 if (fetchResponse.InQueue)
                 {
-                    lock(_searchPage)
+                    lock (_searchPage)
+                    {
                         TryToLeaveQueueAsync(log: false).Wait();
+                    }
 
-                    fetchResponse = await FetchRequestAsync(url, method, data, contentType, customAuthToken);
+                    fetchResponse = await FetchRequestAsync(url, method, authToken, data, contentType);
                 }
 
                 return fetchResponse;
@@ -353,7 +368,7 @@ namespace CharacterAI.Services
         {
             if (_searchPage is null) return;
 
-            var response = await _searchPage.GoToAsync($"https://{(_caiPlusMode ? "plus" : "beta")}.character.ai/search?"); // most lightweight page
+            var response = await _searchPage.GoToAsync($"https://plus.character.ai/search?"); // most lightweight page
             string content = await response.TextAsync();
 
             if (content.Contains("Waiting Room"))
@@ -363,12 +378,24 @@ namespace CharacterAI.Services
             }
         }
 
-        private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method, string contentType, string? customAuthToken = null)
+        private async void ContinueRequest(RequestEventArgs args, dynamic? data, HttpMethod method, string contentType, string authToken)
         {
             var r = args.Request;
-            var payload = CreateRequestPayload(method, data, contentType, customAuthToken ?? _caiToken);
+            var payload = CreateRequestPayload(method, data, contentType, authToken);
 
-            await r.ContinueAsync(payload);
+            try
+            {
+                await r.ContinueAsync(payload);
+            }
+            catch
+            {
+                if (_browser is null) return;
+
+                lock (_browser)
+                {
+                    LaunchBrowserAsync(true).Wait();
+                }
+            }
         }
 
         private static Payload CreateRequestPayload(HttpMethod method, dynamic? data, string contentType, string caiToken)
@@ -393,19 +420,24 @@ namespace CharacterAI.Services
         {
             int requestId;
 
-            while (true)
+            // Try to get in line
+            lock (_requestQueue)
             {
-                requestId = new Random().Next(32767);
-                if (!_requestQueue.Contains(requestId)) break;
+                while (true)
+                {
+                    requestId = new Random().Next(32767);
+                    if (!_requestQueue.Contains(requestId)) break;
+                }
+                _requestQueue.Add(requestId);
             }
-            _requestQueue.Add(requestId);
 
-            for (int i = 0; i < 60; i++)
+            // Await for turn
+            for (int i = 0; i < 30; i++)
             {
-                if (_requestQueue.First() == requestId) break;
-                if (i == 60) return null;
+                if (_requestQueue.FirstOrDefault() == requestId) break;
+                if (i == 30) return null;
 
-                await Task.Delay(3000);
+                await Task.Delay(5000);
             }
 
             return requestId;

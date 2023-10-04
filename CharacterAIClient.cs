@@ -14,15 +14,15 @@ namespace CharacterAI
         /// <summary>
         /// Create a new integration with CharacterAI service
         /// </summary>
-        /// <param name="userToken">Your c.ai user token</param>
+        /// <param name="userToken">Your c.ai user token to use by default</param>
         /// <param name="caiPlusMode">Enable if you have c.ai+ and want the integration to use "plus.character.ai" subdomain instead of "beta.character.ai"; disabled by default.</param>
         /// <param name="customBrowserDirectory">Directory where the browser will be downloaded to. Not required.</param>
         /// <param name="customBrowserExecutablePath">Full path to the chrome executabe binary file. Not required.</param>
-        public CharacterAIClient(string userToken, bool caiPlusMode = false, string? customBrowserDirectory = null, string? customBrowserExecutablePath = null)
+        public CharacterAIClient(string? userToken = null, bool caiPlusMode = false, string? customBrowserDirectory = null, string? customBrowserExecutablePath = null)
         {
-            UserToken = userToken;
+            UserToken = userToken ?? "";
             CaiPlusEnabled = caiPlusMode;
-            _puppeteerService = new(userToken, caiPlusMode, customBrowserDirectory, customBrowserExecutablePath);
+            _puppeteerService = new(customBrowserDirectory, customBrowserExecutablePath);
         }
 
         public void LaunchBrowser(bool killDuplicates = true)
@@ -64,11 +64,11 @@ namespace CharacterAI
             }
 
             string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CaiPlusEnabled) ? "plus" : "beta" )}.character.ai/chat/streaming/";
-            FetchResponse fetchResponse = await _puppeteerService.FetchRequestAsync(url, "POST", contentDynamic, customAuthToken: customAuthToken);
+            FetchResponse fetchResponse = await _puppeteerService.FetchRequestAsync(url, "POST", customAuthToken ?? UserToken, contentDynamic);
 
             if (fetchResponse.IsBlocked)
             {   // Fallback on slower but more stable request method
-                var puppeteerResponse = await _puppeteerService.RequestPostWithDownloadAsync(url, contentDynamic, customAuthToken: customAuthToken);
+                var puppeteerResponse = await _puppeteerService.RequestPostWithDownloadAsync(url, customAuthToken ?? UserToken, contentDynamic);
                 return new CharacterResponse(puppeteerResponse);
             }
 
@@ -83,14 +83,16 @@ namespace CharacterAI
         {
             string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CaiPlusEnabled) ? "plus" : "beta" )}.character.ai/chat/character/info/";
             var data = new Dictionary<string, string> { { "external_id", characterId } };
-            var response = await _puppeteerService.RequestPostAsync(url, data, customAuthToken: customAuthToken);
+            var response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data);
 
             if (response.InQueue)
             {
                 lock (_puppeteerService)
+                {
                     _puppeteerService.TryToLeaveQueueAsync(log: false).Wait();
+                }
 
-                response = await _puppeteerService.RequestPostAsync(url, data, customAuthToken: customAuthToken);
+                response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data);
             }
 
             dynamic? character = null;
@@ -111,14 +113,16 @@ namespace CharacterAI
                 { "character_external_id", characterId }
             });
 
-            var response = await _puppeteerService.RequestPostAsync(url, data, customAuthToken: customAuthToken);
+            var response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data);
 
             if (response.InQueue)
             {
                 lock (_puppeteerService)
+                {
                     _puppeteerService.TryToLeaveQueueAsync(log: false).Wait();
+                }
 
-                response = await _puppeteerService.RequestPostAsync(url, data, customAuthToken: customAuthToken);
+                response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data);
             }
 
             if (response.IsSuccessful)
@@ -139,21 +143,23 @@ namespace CharacterAI
                 { "character_external_id", characterId }
             };
 
-            var response = await _puppeteerService.RequestPostAsync(url, data, customAuthToken: customAuthToken);
+            var response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data);
 
             if (response.InQueue)
             {
                 lock (_puppeteerService)
+                {
                     _puppeteerService.TryToLeaveQueueAsync(log: false).Wait();
+                }
 
-                response = await _puppeteerService.RequestPostAsync(url, data, customAuthToken: customAuthToken);
+                response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data);
             }
 
             // Their servers are shit and sometimes it requires a second request
             if (!response.IsSuccessful)
             {
                 await Task.Delay(3000);
-                response = await _puppeteerService.RequestPostAsync(url, data, customAuthToken: customAuthToken);
+                response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data);
             }
 
             if (!response.IsSuccessful)
@@ -188,13 +194,15 @@ namespace CharacterAI
         public async Task<SearchResponse> SearchAsync(string query, string? customAuthToken = null, bool? customPlusMode = null)
         {
             string url = $"https://{((customPlusMode.HasValue ? (customPlusMode == true) : CaiPlusEnabled) ? "plus" : "beta" )}.character.ai/chat/characters/search/?query={query}";
-            var response = await _puppeteerService.RequestGetAsync(url, customAuthToken);
+            var response = await _puppeteerService.RequestGetAsync(url, customAuthToken ?? UserToken);
             if (response.InQueue)
             {
                 lock (_puppeteerService)
+                {
                     _puppeteerService.TryToLeaveQueueAsync(log: false).Wait();
+                }
 
-                response = await _puppeteerService.RequestGetAsync(url, customAuthToken);
+                response = await _puppeteerService.RequestGetAsync(url, customAuthToken ?? UserToken);
             }
 
             return new SearchResponse(response, query);
@@ -226,14 +234,16 @@ namespace CharacterAI
             string contentType = $"multipart/form-data; boundary={boundary}";
             WriteToLogFile(data);
 
-            var response = await _puppeteerService.RequestPostAsync(url, data, contentType, customAuthToken: customAuthToken);
+            var response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data, contentType);
 
             if (response.InQueue)
             {
                 lock (_puppeteerService)
+                {
                     _puppeteerService.TryToLeaveQueueAsync(log: false).Wait();
+                }
 
-                response = await _puppeteerService.RequestPostAsync(url, data, contentType, customAuthToken: customAuthToken);
+                response = await _puppeteerService.RequestPostAsync(url, customAuthToken ?? UserToken, data, contentType);
             }
 
             if (response.IsSuccessful)
