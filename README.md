@@ -1,5 +1,5 @@
 # CharacterAI.Net
-An unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service.
+An unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service based on [PuppeteerSharp](https://github.com/hardkoded/puppeteer-sharp) and [PuppeteerExtraSharp](https://github.com/Overmiind/Puppeteer-sharp-extra)
 
 <div align="center">
 
@@ -7,8 +7,8 @@ An unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service.
 
 <sup><b>
 If you found this project useful, the best way to thank me is to simply leave a star ⭐<br>
-Also, check out my [CharacterAI Discord Bot](https://github.com/drizzle-mizzle/CharacterAI-Discord-Bot), the parent-project of this repository.<br>
-[Based on [PuppeteerSharp](https://github.com/hardkoded/puppeteer-sharp) and [PuppeteerExtraSharp](https://github.com/Overmiind/Puppeteer-sharp-extra)]</b></sup>
+Also, check out my [Character Engine Discord Bot](https://github.com/drizzle-mizzle/Character-Engine-Discord), the parent-project of this repository.<br>
+</b></sup>
 </div>
 
 ## 📓 Documentation
