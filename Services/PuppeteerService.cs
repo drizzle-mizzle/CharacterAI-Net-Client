@@ -7,8 +7,7 @@ using System.Diagnostics;
 using CharacterAI.Models;
 using static CharacterAI.Services.CommonService;
 using PuppeteerSharp.BrowserData;
-using System.Security;
-using System.Security.Cryptography.X509Certificates;
+using System.Dynamic;
 
 namespace CharacterAI.Services
 {
@@ -41,6 +40,7 @@ namespace CharacterAI.Services
                 "--disable-default-apps", "--disable-features=Translate", "--disable-infobars", "--disable-dev-shm-usage",
                 "--mute-audio", "--ignore-certificate-errors", "--use-gl=egl"
             };
+
             var launchOptions = new LaunchOptions()
             {
                 Args = args,
@@ -49,6 +49,7 @@ namespace CharacterAI.Services
                 ExecutablePath = EXEC_PATH,
                 IgnoredDefaultArgs = new[] { "--disable-extensions" } // https://github.com/puppeteer/puppeteer/blob/main/docs/troubleshooting.md#chrome-headless-doesnt-launch-on-windows
             };
+
             var stealthPlugin = new StealthPlugin(new StealthHardwareConcurrencyOptions(1));
             
             try
@@ -64,7 +65,7 @@ namespace CharacterAI.Services
             }
             catch (Exception e)
             {
-                Failure("Fail", e: e);
+                LogRed("Fail", e: e);
                 Log("\nTrying again...\n");
                 await LaunchBrowserAsync(killDuplicates);
             }
@@ -84,15 +85,15 @@ namespace CharacterAI.Services
                     if (isPuppeteerChrome) process.Kill();
                 }
 
-                _browser = null;
-                _searchPage = null;
+                _browser?.CloseAsync();
+                _searchPage?.CloseAsync();
             }
             catch(Exception e)
             {
-                Failure("Failed to kill browser. This error won't affect the workflow of your application, " +
-                        "but if you will relaunch your application and see this error again, it will mean " +
+                LogRed("Failed to kill browser. This error won't affect the workflow of the application, " +
+                        "but if you will relaunch it and see this error again, it will mean " +
                         "that the old Puppeteer browser process probably is still running in the background " +
-                        "and consumes the memory of your machine.\n",
+                        "and consumes the RAM on your machine.\n",
                         e: e);
             }
         }
@@ -101,22 +102,23 @@ namespace CharacterAI.Services
         {
             if (_browser is null)
             {
-                Failure("You need to launch the browser first!");
+                LogRed("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
-            IPage page;
             try
             {
-                page = await _browser.NewPageAsync();
+                using var page = await _browser.NewPageAsync();
                 await page.SetRequestInterceptionAsync(true);
                 page.Request += (s, e) => ContinueRequest(e, null, HttpMethod.Get, "application/json", authToken);
 
                 var response = await page.GoToAsync(url);
-                var content = await response.TextAsync();
-                _ = page.CloseAsync();
+                string? content = await response.TextAsync();
+                bool ok = response.Ok;
 
-                return new PuppeteerResponse(content, response.Ok);
+                await page.CloseAsync();
+
+                return new PuppeteerResponse(content, ok);
             }
             catch
             {
@@ -132,22 +134,23 @@ namespace CharacterAI.Services
         {
             if (_browser is null)
             {
-                Failure("You need to launch the browser first!");
+                LogRed("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
-            IPage page;
             try
             {
-                page = await _browser.NewPageAsync();
+                using var page = await _browser.NewPageAsync();
                 await page.SetRequestInterceptionAsync(true);
                 page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, contentType, authToken);
 
                 var response = await page.GoToAsync(url);
                 var content = await response.TextAsync();
-                _ = page.CloseAsync();
+                bool ok = response.Ok;
 
-                return new PuppeteerResponse(content, response.Ok);
+                await page.CloseAsync();
+
+                return new PuppeteerResponse(content, ok);
             }
             catch
             {
@@ -163,7 +166,7 @@ namespace CharacterAI.Services
         {
             if (_browser is null)
             {
-                Failure("You need to launch the browser first!");
+                LogRed("You need to launch the browser first!");
                 return new PuppeteerResponse(null, false);
             }
 
@@ -180,13 +183,20 @@ namespace CharacterAI.Services
             if (Directory.Exists(requestPath)) Directory.Delete(requestPath, true);
             Directory.CreateDirectory(requestPath);
 
-            IPage page;
+            string? content = null;
             try
             {
-                page = await _browser.NewPageAsync();
+                using var page = await _browser.NewPageAsync();
                 await page.SetRequestInterceptionAsync(true);
                 await page.Client.SendAsync("Page.setDownloadBehavior", new { behavior = "allow", requestPath });
                 page.Request += (s, e) => ContinueRequest(e, data, HttpMethod.Post, "application/json", authToken);
+
+                // It will always throw a NavigationException exception, but it will perform the request
+                await page.GoToAsync(url);
+            }
+            catch (NavigationException)
+            {
+                content = await TryToExtractResponseAsync(downloadPath);
             }
             catch
             {
@@ -197,29 +207,13 @@ namespace CharacterAI.Services
                 }
             }
 
-            string? content = null;
-
-            // It will always throw an exception, but it will perform the request
-            try { await page.GoToAsync(url); }
-            catch (NavigationException)
-            {
-                content = await TryToExtractResponseAsync(downloadPath);
-            }
-
-            try
-            {
-                _requestQueue.Remove((int)requestId);
-                await page.CloseAsync();
-            }
-            finally
-            {
-                result = new(content, true);
-            }
+            _requestQueue.Remove((int)requestId);
+            result = new(content, true);
 
             return result;
         }
 
-        private async Task<string?> TryToExtractResponseAsync(string downloadPath)
+        private static async Task<string?> TryToExtractResponseAsync(string downloadPath)
         {
             // Wait 90 seconds for the response to download
             for (int i = 0; i < 30; i++)
@@ -247,18 +241,25 @@ namespace CharacterAI.Services
         /// </returns>
         internal async Task TryToLeaveQueueAsync(bool log = true)
         {
-            if (_searchPage is null) return;
-
-            await Task.Delay(15000);
-            if (log) Log("\n15sec has passed, reloading... ");
-
-            var response = await _searchPage.ReloadAsync();
-            string content = await response.TextAsync();
-
-            if (content.Contains("Waiting Room"))
+            try
             {
-                if (log) Log(":(\nWait...");
-                await TryToLeaveQueueAsync(log);
+                if (_searchPage is null) return;
+
+                await Task.Delay(15000);
+                if (log) Log("\n15sec has passed, reloading... ");
+
+                var response = await _searchPage.ReloadAsync();
+                string content = await response.TextAsync();
+
+                if (content.Contains("Waiting Room"))
+                {
+                    if (log) Log(":(\nWait...");
+                    await TryToLeaveQueueAsync(log);
+                }
+            }
+            catch
+            {
+                return;
             }
         }
 
@@ -266,7 +267,7 @@ namespace CharacterAI.Services
         {
             if (_browser is null || _searchPage is null)
             {
-                Failure("You need to launch the browser first!");
+                LogRed("You need to launch the browser first!");
                 return new FetchResponse(null);
             }
 
@@ -307,7 +308,7 @@ namespace CharacterAI.Services
             }
             catch (Exception e)
             {
-                Failure(e: e);
+                LogRed(e: e);
                 return new FetchResponse(null);
             }
         }
@@ -330,34 +331,40 @@ namespace CharacterAI.Services
             int top = Console.GetCursorPosition().Top;
             int progress = 0;
 
+            object locker = new();
             browserFetcher.DownloadProgressChanged += (sender, args) =>
             {
-                var pp = args.ProgressPercentage;
-                if (pp <= progress) return;
-
-                progress = pp;
-                Console.SetCursorPosition(0, top);
-
-                string logProgress = $"Progress: [{new string('=', pp / 2)}{new string(' ', 50 - (pp / 2))}] ";
-                int l = logProgress.Length;
-                Log(logProgress);
-
-                if (pp < 100)
+                lock (locker)
                 {
-                    string oo = $"{pp}% ";
-                    l += oo.Length;
-                    Log(oo);
-                }
-                else
-                {
-                    l += 5;
-                    Log("100% ", ConsoleColor.Green);
-                }
+                    var pp = args.ProgressPercentage;
+                    if (pp <= progress) return;
 
-                string mb = $"({Math.Round(args.BytesReceived / 1024000.0f, 2)}/{Math.Round(args.TotalBytesToReceive / 1024000.0f, 2)} mb)";
-                l += mb.Length;
-                Log(mb, ConsoleColor.Yellow);
-                Log(new string(' ', Console.WindowWidth - l));
+                    progress = pp;
+                    Console.SetCursorPosition(0, top);
+
+                    string logProgress = $"Progress: [{new string('=', pp / 2)}{new string(' ', 50 - (pp / 2))}] ";
+                    int l = logProgress.Length;
+
+                    Console.Write(new string('\b', Console.WindowWidth));
+                    Log(logProgress);
+
+                    if (pp < 100)
+                    {
+                        string oo = $"{pp}% ";
+                        l += oo.Length;
+                        Log(oo);
+                    }
+                    else
+                    {
+                        l += 5;
+                        Log("100% ", ConsoleColor.Green);
+                    }
+
+                    string mb = $"({Math.Round(args.BytesReceived / 1024000.0f, 2)}/{Math.Round(args.TotalBytesToReceive / 1024000.0f, 2)} mb)";
+                    l += mb.Length;
+                    Log(mb, ConsoleColor.Yellow);
+                    Task.Delay(10).Wait();
+                }
             };
             var browser = await browserFetcher.DownloadAsync();
 
@@ -366,15 +373,22 @@ namespace CharacterAI.Services
 
         private async Task TryToOpenCaiPage()
         {
-            if (_searchPage is null) return;
-
-            var response = await _searchPage.GoToAsync($"https://plus.character.ai/search?"); // most lightweight page
-            string content = await response.TextAsync();
-
-            if (content.Contains("Waiting Room"))
+            try
             {
-                Log("\nYou are now in line. Wait... ");
-                await TryToLeaveQueueAsync();
+                if (_searchPage is null) return;
+
+                var response = await _searchPage.GoToAsync($"https://plus.character.ai/search?"); // most lightweight page
+                string content = await response.TextAsync();
+
+                if (content.Contains("Waiting Room"))
+                {
+                    Log("\nYou are now in line. Wait... ");
+                    await TryToLeaveQueueAsync();
+                }
+            }
+            catch
+            {
+                return;
             }
         }
 
@@ -407,7 +421,9 @@ namespace CharacterAI.Services
                 { "content-type", contentType },
                 { "user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36" }
             };
+
             string? serializedData;
+
             if (data is string || data is null)
                 serializedData = data;
             else

@@ -22,6 +22,7 @@ namespace CharacterAI.Models
             }
             
             var result = JsonConvert.DeserializeObject<dynamic>(response.ToString());
+            
             IsSuccessful = $"{result?.status}" == "200";
             Status = result?.status;
             Content = result?.content;

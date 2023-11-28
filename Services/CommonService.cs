@@ -27,7 +27,7 @@ namespace CharacterAI.Services
         /// <summary>
         /// Log and return false
         /// </summary>
-        internal static bool Failure(string? logText = null, string? response = null, Exception? e = null)
+        internal static bool LogRed(string? logText = null, string? response = null, Exception? e = null)
         {
             if (logText is not null)
                 Log($"{logText}\n", ConsoleColor.Red);
@@ -59,7 +59,7 @@ namespace CharacterAI.Services
 
                 File.AppendAllText(fileName, text + "\n\n------------------------\n\n");
             }
-            catch { Failure("Woops."); }
+            catch { LogRed("Woops."); }
         }
 
         /// <summary>
