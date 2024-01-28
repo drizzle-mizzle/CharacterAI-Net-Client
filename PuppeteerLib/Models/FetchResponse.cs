@@ -1,8 +1,7 @@
-﻿using CharacterAI.Services;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace CharacterAI.Models
+namespace PuppeteerLib.Models
 {
     public class FetchResponse
     {
@@ -18,16 +17,18 @@ namespace CharacterAI.Models
             {
                 IsSuccessful = false;
                 InQueue = false;
+                IsBlocked = false;
                 return;
             }
             
             var result = JsonConvert.DeserializeObject<dynamic>(response.ToString());
             
-            IsSuccessful = $"{result?.status}" == "200";
             Status = result?.status;
             Content = result?.content;
             InQueue = Content?.Contains("Waiting Room") ?? false;
             IsBlocked = Content?.Contains("Just a moment") ?? false;
+
+            IsSuccessful = !InQueue && $"{result?.status}" == "200";
         }
     }
 }

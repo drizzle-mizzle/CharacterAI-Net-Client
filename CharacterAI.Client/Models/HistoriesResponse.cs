@@ -1,10 +1,9 @@
 ﻿using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
-using CharacterAI.Services;
 
 namespace CharacterAI.Models
 {
-    public class HistoriesResponse : CommonService
+    public class HistoriesResponse
     {
         //public List<Character>? Histories { get; }
         //public string? ErrorReason { get; }

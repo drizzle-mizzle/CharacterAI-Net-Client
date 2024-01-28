@@ -1,4 +1,4 @@
-﻿namespace CharacterAI.Models
+﻿namespace PuppeteerLib.Models
 {
     public class PuppeteerResponse
     {

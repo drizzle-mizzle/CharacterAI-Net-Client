@@ -1,10 +1,10 @@
 ﻿using Newtonsoft.Json;
-using CharacterAI.Services;
 using Newtonsoft.Json.Linq;
+using static SharedUtils.Common;
 
 namespace CharacterAI.Models
 {
-    public class CharacterResponse : CommonService
+    public class CharacterResponse
     {
         public Reply? Response { get; }
         public string? LastUserMsgUuId { get; }
@@ -31,7 +31,7 @@ namespace CharacterAI.Models
         {
             if (!response.IsSuccessful)
             {
-                LogRed(response?.Status, response?.Content);
+                LogRed(response.Content);
                 return $"Something went wrong";
             }
             
@@ -40,38 +40,28 @@ namespace CharacterAI.Models
             { 
                 var chunks = content.Split("\n").ToList();
                 var parsedChunks = chunks.ConvertAll(JsonConvert.DeserializeObject<dynamic>);
-                parsedChunks.Reverse(); // Only last chunks contains "abort" or "final_chunk", so it will be a bit faster to find
-
-                var abortChunk = parsedChunks.FirstOrDefault(pc => pc?.abort == true);
+                
+                var abortChunk = parsedChunks.FirstOrDefault(pc => pc?.abort == true || pc?.abort == "true");
                 if (abortChunk is not null)
                 {
-                    string reason = abortChunk.error is string e ? e : "Something went wrong";
-                    string abortMsg;
+                    string abortMsg = "Seems like character response was filtered!";
 
-                    if (reason.Equals("No eligible candidates"))
-                    {
-                        abortMsg = "Seems like character response was filtered!";
-                        var lastMessageChunk = parsedChunks.FirstOrDefault(c => c?.replies is not null);
-                        if (lastMessageChunk is not null && GetCharacterResponse((JArray)lastMessageChunk.replies) is Reply lastReply)
-                            abortMsg += $" It was cut off on:\n{lastReply.Text}";
-                    }
-                    else
-                    {
-                        abortMsg = reason;
-                    }
+                    var lastMessageChunk = parsedChunks.FirstOrDefault(c => c?.replies is not null);
+                    if (lastMessageChunk is not null && GetCharacterResponse((JArray)lastMessageChunk.replies) is Reply lastReply)
+                        abortMsg += $" It was cut off on:\n{lastReply.Text}";
+                    else if (abortChunk.error is string er)
+                        abortMsg += $" ({er})";
                     
                     return abortMsg;
                 }
-                else
-                {
-                    var finalChunk = parsedChunks.FirstOrDefault(c => c?.is_final_chunk == true, null);
-                    if (finalChunk is not null)
-                        return finalChunk;
-                }
+
+                var finalChunk = parsedChunks.FirstOrDefault(c => c?.is_final_chunk == true, null);
+                if (finalChunk is not null)
+                    return finalChunk;
             }
             catch (Exception e)
             {
-                LogRed($"{response?.Status ?? "?"} | Error in ParseCharacterResponse", content?.Trim()?.Replace("\n\n", ""), e: e);
+                LogRed(content?.Trim().Replace("\n\n", ""), e: e);
             }
 
             return $"Something went wrong...";

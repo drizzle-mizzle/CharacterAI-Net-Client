@@ -1,16 +1,17 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using CharacterAI.Services;
+using PuppeteerLib.Models;
+using static SharedUtils.Common;
 
 namespace CharacterAI.Models
 {
-    public class SearchResponse : CommonService
+    public class SearchResponse
     {
         public List<Character> Characters { get; } = new();
         public string? ErrorReason { get; }
         public string OriginalQuery { get; }
-        public bool IsSuccessful { get => ErrorReason is null; }
-        public bool IsEmpty { get => !Characters.Any(); }
+        public bool IsSuccessful => ErrorReason is null;
+        public bool IsEmpty => Characters.Count == 0;
 
         public SearchResponse(PuppeteerResponse response, string query)
         {
@@ -32,7 +33,7 @@ namespace CharacterAI.Models
         {
             if (!response.IsSuccessful)
             {
-                LogRed(response: response.Content);
+                LogRed(response.Content);
                 return "Something went wrong";
             }
 
