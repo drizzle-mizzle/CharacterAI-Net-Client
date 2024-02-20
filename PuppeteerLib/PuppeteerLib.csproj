@@ -9,7 +9,8 @@
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="PuppeteerExtraSharp" Version="2.0.0" />
-    <PackageReference Include="PuppeteerSharp" Version="13.0.2" />
+    <PackageReference Include="PuppeteerSharp" Version="14.1.0" />
+    <PackageReference Include="Tmds.ExecFunction" Version="0.7.1" />
   </ItemGroup>
 
   <ItemGroup>

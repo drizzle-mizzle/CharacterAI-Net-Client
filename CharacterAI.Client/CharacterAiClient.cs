@@ -1,20 +1,20 @@
 ﻿using System.Diagnostics;
 using System.Dynamic;
-using CharacterAI.Models;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using static SharedUtils.Common;
-using static PuppeteerLib.PuppeteerLib;
 using PuppeteerLib.Models;
+using static PuppeteerLib.RequestsUtils;
 using PuppeteerSharp;
+using CharacterAI.Models.Result;
+using CharacterAI.Models.Result;
+using PuppeteerLib;
 
 namespace CharacterAI.Client
 {
     public class CharacterAiClient : IDisposable
     {
-        private string _browserExecutablePath = null!;
-        private readonly List<int> _heavyRequestsQueue = new();
-        //private readonly List<int> _liteRequestsQueue = new();
+        private string _browserExecutablePath;
+        private readonly List<Guid> _heavyRequestsQueue = [];
 
         /// <summary>
         /// Browser : Usages
@@ -23,6 +23,7 @@ namespace CharacterAI.Client
         private IBrowser _browser = null!;
         private IPage _page = null!;
         
+
         /// <summary>
         /// Create new integration with CharacterAI
         /// </summary>
@@ -34,6 +35,7 @@ namespace CharacterAI.Client
             _browserExecutablePath = exe ?? TryToDownloadBrowserAsync(dir ?? $"{CD}{SC}puppeteer-chrome").Result;
         }
 
+
         public async Task LaunchBrowserAsync()
         {            
             _browser = (await LaunchBrowserInstanceAsync(_browserExecutablePath))!;
@@ -43,40 +45,7 @@ namespace CharacterAI.Client
             while (!ok)
                 ok = await _page.TryToLeaveQueueAsync();
         }
-
-        //private IBrowser? GetBrowser()
-        //{
-        //    try
-        //    {
-        //        lock (_browsersPool)
-        //        {
-        //            var browser = _browsersPool.FirstOrDefault(b => b.Value < 10).Key;
-
-        //            if (browser is null)
-        //            {
-        //                browser = LaunchBrowserInstanceAsync(path: _browserExecutablePath).Result;
-
-        //                if (browser is not null)
-        //                    _browsersPool.TryAdd(browser, 0);
-        //            }
-
-        //            return browser;
-        //        }
-        //    }
-        //    catch
-        //    {
-        //        return null;
-        //    }
-        //    finally
-        //    {
-        //        lock (_browsersPool)
-        //            foreach (var browser in _browsersPool.Where(b => b.Value >= 10).Select(b => b.Key))
-        //            {
-        //                _browsersPool.Remove(browser);
-        //                Task.Run(async () => await KillBrowserInstanceAsync(browser));
-        //            }
-        //    }
-        //}
+        
 
         public void EnsureAllChromeInstancesAreKilled()
         {
@@ -106,9 +75,7 @@ namespace CharacterAI.Client
         /// Send message and get response
         /// </summary>
         /// <returns>new CharacterResponse()</returns>
-        public async Task<CharacterResponse> CallCharacterAsync(string characterId, string characterTgt,
-            string historyId, string message = "", string? imagePath = null, string? primaryMsgUuId = null,
-            string? parentMsgUuId = null, string authToken = "", bool plusMode = false)
+        public async Task<CharacterResponse> CallCharacterAsync(string characterId, string characterTgt, string historyId, string message = "", string? imagePath = null, string? primaryMsgUuId = null, string? parentMsgUuId = null, string authToken = "", bool plusMode = false)
         {
             var contentDynamic = BasicCallContent(characterId, characterTgt, message, imagePath, historyId);
 
@@ -129,7 +96,7 @@ namespace CharacterAI.Client
             string sub = plusMode ? "plus" : "beta";
             string url = $"https://{sub}.character.ai/chat/streaming/";
             
-            FetchResponse fetchResponse = await FetchRequestAsync(_page, url, "POST", authToken, contentDynamic);
+            FetchResponse fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
             if (fetchResponse.InQueue)
             {
                 lock (_page)
@@ -138,27 +105,26 @@ namespace CharacterAI.Client
                         Task.Delay(10000).Wait();
                 }
 
-                fetchResponse = await FetchRequestAsync(_page, url, "POST", authToken, contentDynamic);
+                fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
             }
 
-            var fetchResult = new CharacterResponse(fetchResponse);
+            var result = new CharacterResponse(fetchResponse);
             
             if (!fetchResponse.IsBlocked)
-                return fetchResult;
+                return result;
 
-            if (WaitForTurnHeavy() is not int requsetId)
-                return fetchResult;
+            if (WaitForTurn() is not Guid requsetId)
+                return result;
 
-            // Fallback on slower but more stable request method
             try
             {
-                var puppeteerResponse = await PuppeteerLib.PuppeteerLib.RequestPostWithDownloadAsync(_browser, requsetId, url, authToken, contentDynamic);
+                var puppeteerResponse = await RequestPostWithDownloadAsync(requsetId, _browser.GetExeName(), url, authToken, contentDynamic);
                 return new CharacterResponse(puppeteerResponse); // OK
             }
             catch (Exception e)
             {
                 LogRed(e: e);
-                return fetchResult;
+                return result;
             }
         }
 
@@ -166,34 +132,43 @@ namespace CharacterAI.Client
         /// Get info about character
         /// </summary>
         /// <returns>new Character; can throw Exception</returns>
-        public async Task<Character> GetInfoAsync(string characterId, string authToken = "", bool plusMode = false)
+        public async Task<GetInfoResponse> GetInfoAsync(string characterId, string authToken = "", bool plusMode = false)
         {
             string sub = (plusMode) ? "plus" : "beta";
             string url = $"https://{sub}.character.ai/chat/character/info/";
-            var data = new Dictionary<string, string> { { "external_id", characterId } };
 
-            var response = await _browser.RequestPostAsync(url, authToken, data);
+            dynamic contentDynamic = new ExpandoObject();
+            contentDynamic.external_id = characterId;
 
-            dynamic? character;
-            if (response.InQueue)
-                character = null;
-            else if (response.IsSuccessful)
+            FetchResponse fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
+            if (fetchResponse.InQueue)
             {
-                var parsed = JsonConvert.DeserializeObject<dynamic>(response.Content!)
-                    ?? throw new Exception("No content");
+                lock (_page)
+                {
+                    while (!_page.TryToLeaveQueueAsync().Result)
+                        Task.Delay(10000).Wait();
+                }
 
-                if (parsed.character is JArray)
-                    throw new Exception($"Failed to get character info. Perhaps the character is private?{(parsed.error is string e ? $" | Error: {e}" : "")}");
-
-                character = parsed.character;
-            }
-            else
-            {
-                LogRed(response.Content);
-                character = null;
+                fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
             }
 
-            return new Character(character);
+            var result = new GetInfoResponse(fetchResponse);
+            if (!fetchResponse.IsBlocked)
+                return result;
+
+            if (WaitForTurn() is not Guid requsetId)
+                return result;
+
+            try
+            {
+                var puppeteerResponse = await PostGotoRequestAsync(requsetId, _browser.GetExeName(), url, authToken, contentDynamic);
+                return new GetInfoResponse(puppeteerResponse); // OK
+            }
+            catch (Exception e)
+            {
+                LogRed(e: e);
+                return result;
+            }
         }
 
         public async Task<string?> GetLastChatAsync(string characterId, string authToken = "", bool plusMode = false)
@@ -201,18 +176,46 @@ namespace CharacterAI.Client
             string sub = plusMode ? "plus" : "beta";
             string url = $"https://{sub}.character.ai/chat/history/continue/";
 
-            var data = new FormUrlEncodedContent(new Dictionary<string, string> {
-                { "character_external_id", characterId }
-            });
+            dynamic contentDynamic = new ExpandoObject();
+            contentDynamic.character_external_id = characterId;
+            
+            FetchResponse fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
+            if (fetchResponse.InQueue)
+            {
+                lock (_page)
+                {
+                    while (!_page.TryToLeaveQueueAsync().Result)
+                        Task.Delay(10000).Wait();
+                }
 
-            var response = await _browser.RequestPostAsync(url, authToken, data);
+                fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
+            }
 
-            if (response.IsSuccessful)
-                return JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id;
+            if (fetchResponse.IsSuccessful && !fetchResponse.IsBlocked)
+                return JsonConvert.DeserializeObject<dynamic>(fetchResponse.Content!)?.external_id;
 
-            await Task.Delay(5000);
-            return await CreateNewChatAsync(characterId, authToken, plusMode);
+            async Task<string?> FallbackOnCreateNewChat()
+            {
+                await Task.Delay(5000);
+                return await CreateNewChatAsync(characterId, authToken, plusMode);
+            }
 
+            if (!fetchResponse.IsBlocked)
+                return await FallbackOnCreateNewChat();
+
+            if (WaitForTurn() is not Guid requsetId)
+                return await FallbackOnCreateNewChat();
+
+            try
+            {
+                var puppeteerResponse = await PostGotoRequestAsync(requsetId, _browser.GetExeName(), url, authToken, contentDynamic);
+                return JsonConvert.DeserializeObject<dynamic>(puppeteerResponse.Content!)?.external_id; // OK
+            }
+            catch (Exception e)
+            {
+                LogRed(e: e);
+                return await FallbackOnCreateNewChat();
+            }
         }
 
         /// <summary>
@@ -223,31 +226,40 @@ namespace CharacterAI.Client
         {
             string sub = plusMode ? "plus" : "beta";
             string url = $"https://{sub}.character.ai/chat/history/create/";
-            var data = new Dictionary<string, string>
-            {
-                { "character_external_id", characterId }
-            };
 
-            var response = await _browser.RequestPostAsync(url, authToken, data);
+            dynamic contentDynamic = new ExpandoObject();
+            contentDynamic.character_external_id = characterId;
 
-            // Their servers are shit and sometimes it requires a second request
-            if (!response.IsSuccessful)
+            FetchResponse fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
+            if (fetchResponse.InQueue)
             {
-                await Task.Delay(3000);
-                response = await _browser.RequestPostAsync(url, authToken, data);
+                lock (_page)
+                {
+                    while (!_page.TryToLeaveQueueAsync().Result)
+                        Task.Delay(10000).Wait();
+                }
+
+                fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
             }
+            if (fetchResponse.IsSuccessful && !fetchResponse.IsBlocked)
+                return JsonConvert.DeserializeObject<dynamic>(fetchResponse.Content!)?.external_id;
 
-            if (!response.IsSuccessful)
+            if (!fetchResponse.IsBlocked)
+                return null;
+
+            if (WaitForTurn() is not Guid requestId)
+                return null;
+
+            try
             {
-                LogRed(response.Content);
+                var puppeteerResponse = await PostGotoRequestAsync(requestId, _browser.GetExeName(), url, authToken, contentDynamic);
+                return JsonConvert.DeserializeObject<dynamic>(puppeteerResponse.Content!)?.external_id; // OK
+            }
+            catch (Exception e)
+            {
+                LogRed(e: e);
                 return null;
             }
-
-            var externalId = JsonConvert.DeserializeObject<dynamic>(response.Content!)?.external_id;
-            if (externalId is null)
-                LogRed(response.Content);
-
-            return externalId;
         }
 
         // Search for a character
@@ -256,10 +268,38 @@ namespace CharacterAI.Client
             string sub = plusMode ? "plus" : "beta";
             string url = $"https://{sub}.character.ai/chat/characters/search/?query={query}";
             
-            var response = await _browser.RequestGetAsync(url, authToken);
+            FetchResponse fetchResponse = await FetchRequestGetAsync(page: _page, url: url, authToken: authToken);
+            if (fetchResponse.InQueue)
+            {
+                lock (_page)
+                {
+                    while (!_page.TryToLeaveQueueAsync().Result)
+                        Task.Delay(10000).Wait();
+                }
 
-            return new SearchResponse(response, query);
+                fetchResponse = await FetchRequestGetAsync(page: _page, url: url, authToken: authToken);
+            }
+
+            var result = new SearchResponse(fetchResponse, query);
+            if (!fetchResponse.IsBlocked)
+                return result;
+
+            if (WaitForTurn() is not Guid requsetId)
+                return result;
+
+            try
+            {
+                var puppeteerResponse = await GetGotoRequestAsync(requsetId, _browser.GetExeName(), url, authToken);
+                return new SearchResponse(puppeteerResponse, query); // OK
+            }
+            catch (Exception e)
+            {
+                LogRed(e: e);
+                return result;
+            }
         }
+
+        
 
         /// <summary>
         /// Here is listed the whole list of all known payload parameters.
@@ -309,13 +349,13 @@ namespace CharacterAI.Client
             return content;
         }
 
-        private int? WaitForTurnHeavy()
+        private Guid? WaitForTurn()
         {
-            int requestId;
+            Guid requestId;
 
             while (true)
             {
-                requestId = new Random().Next(32767);
+                requestId = Guid.NewGuid();
                 lock (_heavyRequestsQueue)
                     if (!_heavyRequestsQueue.Contains(requestId)) break;
             }
@@ -349,47 +389,6 @@ namespace CharacterAI.Client
                     _heavyRequestsQueue.Remove(requestId);
             }
         }
-
-        //private int? WaitForTurnLite()
-        //{
-        //    int requestId;
-
-        //    while (true)
-        //    {
-        //        requestId = new Random().Next(32767);
-        //        lock (_liteRequestsQueue)
-        //            if (!_liteRequestsQueue.Contains(requestId)) break;
-        //    }
-
-        //    lock (_liteRequestsQueue)
-        //        _liteRequestsQueue.Add(requestId);
-
-        //    try
-        //    {
-        //        for (int i = 0; i <= 40; i++)
-        //        {
-        //            lock (_liteRequestsQueue)
-        //                if (_liteRequestsQueue.Count < 20 || _liteRequestsQueue[..20].Contains(requestId))
-        //                    break;
-
-        //            if (i == 40)
-        //                return null;
-
-        //            Task.Delay(3000).Wait();
-        //        }
-
-        //        return requestId;
-        //    }
-        //    catch
-        //    {
-        //        return null;
-        //    }
-        //    finally
-        //    {
-        //        lock (_liteRequestsQueue)
-        //            _liteRequestsQueue.Remove(requestId);
-        //    }
-        //}
 
         #region IDisposable implementation with finalizer
 
@@ -432,5 +431,11 @@ namespace CharacterAI.Client
             _disposed = true;
         }
         #endregion
+    }
+
+    public static class Ext
+    {
+        public static string GetExeName(this IBrowser browser)
+            => browser.Process.MainModule!.FileName;
     }
 }
