@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace CharacterAI.Models
+namespace CharacterAiNetApiWrapper.Models
 {
     public class Character
     {

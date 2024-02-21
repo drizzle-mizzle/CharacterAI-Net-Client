@@ -1,8 +1,7 @@
-﻿using CharacterAI.Models;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace CharacterAI.Models.Result;
+namespace CharacterAiNetApiWrapper.Models.Result;
 
 public class SearchResponse
 {

@@ -1,4 +1,4 @@
-﻿namespace CharacterAI.Models
+﻿namespace CharacterAiNetApiWrapper.Models
 {
     public class CharacterMessage
     {

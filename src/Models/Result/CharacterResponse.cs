@@ -1,9 +1,8 @@
-﻿using CharacterAI.Models;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using static SharedUtils.Common;
+using static CharacterAiNetApiWrapper.Helpers;
 
-namespace CharacterAI.Models.Result;
+namespace CharacterAiNetApiWrapper.Models.Result;
 
 public class CharacterResponse
 {

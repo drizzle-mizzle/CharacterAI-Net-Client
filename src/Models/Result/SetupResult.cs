@@ -1,4 +1,4 @@
-﻿namespace CharacterAI.Models.Result;
+﻿namespace CharacterAiNetApiWrapper.Models.Result;
 
 public class SetupResult
 {

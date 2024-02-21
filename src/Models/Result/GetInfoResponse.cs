@@ -1,5 +1,4 @@
-﻿using CharacterAI.Models;
-using Microsoft.VisualBasic;
+﻿using Microsoft.VisualBasic;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
 using System;
@@ -9,7 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
-namespace CharacterAI.Models.Result;
+namespace CharacterAiNetApiWrapper.Models.Result;
 
 public class GetInfoResponse
 {

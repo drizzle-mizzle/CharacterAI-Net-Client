@@ -1,80 +1,69 @@
 ﻿using System.Diagnostics;
 using System.Dynamic;
 using Newtonsoft.Json;
-using static SharedUtils.Common;
 using PuppeteerLib.Models;
-using static PuppeteerLib.RequestsUtils;
+using CharacterAiNetApiWrapper.Models.Result;
 using PuppeteerSharp;
-using CharacterAI.Models.Result;
-using CharacterAI.Models.Result;
 using PuppeteerLib;
+using static PuppeteerLib.WebDriverClient;
 
-namespace CharacterAI.Client
+namespace CharacterAiNetApiWrapper
 {
-    public class CharacterAiClient : IDisposable
+    public class CaiClient : IDisposable
     {
-        private string _browserExecutablePath;
+        private string _browserExecutablePath = null!;
+        private string _browserDirectory;
         private readonly List<Guid> _heavyRequestsQueue = [];
 
-        /// <summary>
-        /// Browser : Usages
-        /// </summary>
-        //private readonly Dictionary<IBrowser, int> _browsersPool = new();
         private IBrowser _browser = null!;
         private IPage _page = null!;
-        
+
 
         /// <summary>
-        /// Create new integration with CharacterAI
+        /// Create new integration with CharacterAI; you will have to launch it after with LaunchAsync()
         /// </summary>
-        public CharacterAiClient(string? customBrowserDirectory = null, string? customBrowserExecutablePath = null)
+        public CaiClient(string? customBrowserDirectory = null, string? customBrowserExecutablePath = null)
         {
-            var dir = string.IsNullOrWhiteSpace(customBrowserDirectory) ? null : customBrowserDirectory;
+            var dir = string.IsNullOrWhiteSpace(customBrowserDirectory) ? $"{CD}{SC}puppeteer-chrome" : customBrowserDirectory;
             var exe = string.IsNullOrWhiteSpace(customBrowserExecutablePath) ? null : customBrowserExecutablePath;
 
-            _browserExecutablePath = exe ?? TryToDownloadBrowserAsync(dir ?? $"{CD}{SC}puppeteer-chrome").Result;
+            _browserExecutablePath = exe!;
+            _browserDirectory = dir;
         }
 
 
-        public async Task LaunchBrowserAsync()
+        public async Task<CaiClient> ConnectAsync()
         {            
+            _browserExecutablePath ??= await TryToDownloadBrowserAsync(_browserDirectory);
             _browser = (await LaunchBrowserInstanceAsync(_browserExecutablePath))!;
+
             _page = await _browser.NewPageAsync();
             await _page.GoToAsync("https://plus.character.ai/search");
+
             bool ok = false;
             while (!ok)
                 ok = await _page.TryToLeaveQueueAsync();
+
+            return this;
         }
         
 
-        public void EnsureAllChromeInstancesAreKilled()
+        public async Task ReconnectAsync()
         {
-            if (string.IsNullOrEmpty(_browserExecutablePath))
-                throw new Exception("No browser path");
+            await _page.CloseAsync();
+            _page = await _browser.NewPageAsync();
+            await _page.GoToAsync("https://plus.character.ai/search");
 
-            try
-            {
-                string browserDir = _browserExecutablePath[..(_browserExecutablePath.LastIndexOf(SC))];
-                var allProcessesInDir = Process.GetProcesses().Where(proc =>
-                    proc.MainModule != null && proc.MainModule.FileName.StartsWith(browserDir));
-
-                foreach (var proc in allProcessesInDir)
-                {
-                    try { proc.Kill(); }
-                    catch (Exception e) { LogRed($"(Warning) Failed to kill \"{proc.Id}\"", e); }
-                }
-            }
-            catch (Exception e)
-            {
-                LogRed("(Warning) Failed to kill browser instances", e);
-            }
+            bool ok = false;
+            while (!ok)
+                ok = await _page.TryToLeaveQueueAsync();
         }
 
 
         /// <summary>
         /// Send message and get response
         /// </summary>
-        /// <returns>new CharacterResponse()</returns>
+        /// <returns>new CharacterResponse</returns>
         public async Task<CharacterResponse> CallCharacterAsync(string characterId, string characterTgt, string historyId, string message = "", string? imagePath = null, string? primaryMsgUuId = null, string? parentMsgUuId = null, string authToken = "", bool plusMode = false)
         {
             var contentDynamic = BasicCallContent(characterId, characterTgt, message, imagePath, historyId);
@@ -109,23 +98,20 @@ namespace CharacterAI.Client
             }
 
             var result = new CharacterResponse(fetchResponse);
-            
-            if (!fetchResponse.IsBlocked)
-                return result;
-
-            if (WaitForTurn() is not Guid requsetId)
+            if ((fetchResponse.IsSuccessful && !fetchResponse.IsBlocked) || WaitForTurn() is not Guid requsetId)
                 return result;
 
             try
             {
                 var puppeteerResponse = await RequestPostWithDownloadAsync(requsetId, _browser.GetExeName(), url, authToken, contentDynamic);
-                return new CharacterResponse(puppeteerResponse); // OK
+                result = new CharacterResponse(puppeteerResponse); // OK
             }
             catch (Exception e)
             {
                 LogRed(e: e);
-                return result;
             }
+
+            return result;
         }
 
         /// <summary>
@@ -153,22 +139,20 @@ namespace CharacterAI.Client
             }
 
             var result = new GetInfoResponse(fetchResponse);
-            if (!fetchResponse.IsBlocked)
-                return result;
-
-            if (WaitForTurn() is not Guid requsetId)
+            if ((fetchResponse.IsSuccessful && !fetchResponse.IsBlocked) || WaitForTurn() is not Guid requsetId)
                 return result;
 
             try
             {
                 var puppeteerResponse = await PostGotoRequestAsync(requsetId, _browser.GetExeName(), url, authToken, contentDynamic);
-                return new GetInfoResponse(puppeteerResponse); // OK
+                result = new GetInfoResponse(puppeteerResponse); // OK
             }
             catch (Exception e)
             {
                 LogRed(e: e);
-                return result;
             }
+
+            return result;
         }
 
         public async Task<string?> GetLastChatAsync(string characterId, string authToken = "", bool plusMode = false)
@@ -200,10 +184,7 @@ namespace CharacterAI.Client
                 return await CreateNewChatAsync(characterId, authToken, plusMode);
             }
 
-            if (!fetchResponse.IsBlocked)
-                return await FallbackOnCreateNewChat();
-
-            if (WaitForTurn() is not Guid requsetId)
+            if (!fetchResponse.IsBlocked || WaitForTurn() is not Guid requsetId)
                 return await FallbackOnCreateNewChat();
 
             try
@@ -241,14 +222,9 @@ namespace CharacterAI.Client
 
                 fetchResponse = await FetchRequestPostAsync(page: _page, url: url, authToken: authToken, data: contentDynamic);
             }
-            if (fetchResponse.IsSuccessful && !fetchResponse.IsBlocked)
+
+            if ((fetchResponse.IsSuccessful && !fetchResponse.IsBlocked) || WaitForTurn() is not Guid requestId)
                 return JsonConvert.DeserializeObject<dynamic>(fetchResponse.Content!)?.external_id;
-
-            if (!fetchResponse.IsBlocked)
-                return null;
-
-            if (WaitForTurn() is not Guid requestId)
-                return null;
 
             try
             {
@@ -281,22 +257,20 @@ namespace CharacterAI.Client
             }
 
             var result = new SearchResponse(fetchResponse, query);
-            if (!fetchResponse.IsBlocked)
-                return result;
-
-            if (WaitForTurn() is not Guid requsetId)
+            if ((fetchResponse.IsSuccessful && !fetchResponse.IsBlocked) || WaitForTurn() is not Guid requestId)
                 return result;
 
             try
             {
-                var puppeteerResponse = await GetGotoRequestAsync(requsetId, _browser.GetExeName(), url, authToken);
-                return new SearchResponse(puppeteerResponse, query); // OK
+                var puppeteerResponse = await GetGotoRequestAsync(requestId, _browser.GetExeName(), url, authToken);
+                result = new SearchResponse(puppeteerResponse, query); // OK
             }
             catch (Exception e)
             {
                 LogRed(e: e);
-                return result;
             }
+
+            return result;
         }
 
         
@@ -390,26 +364,62 @@ namespace CharacterAI.Client
             }
         }
 
+        private static readonly string CD = Directory.GetCurrentDirectory();
+        private static readonly char SC = Path.DirectorySeparatorChar;
+
+        private static void LogRed(string? title = null, Exception? e = null)
+        {
+            if (title is not null)
+                Log($"{title}\n", ConsoleColor.Red);
+
+            if (e is not null)
+                Log($"Exception details:\n{e}\n", ConsoleColor.Red);
+        }
+
+        private static void Log(string text, ConsoleColor color = ConsoleColor.Gray)
+        {
+            Console.ForegroundColor = color;
+            Console.Write(text);
+            Console.ResetColor();
+        }
+
         #region IDisposable implementation with finalizer
 
         private bool _disposed;
+
+        /// <summary>
+        /// Closes all web-driver processes and frees used memory
+        /// </summary>
         public void Dispose()
         {
             Dispose(true);
             GC.SuppressFinalize(this);   
         }
-        
+
+
         protected virtual void Dispose(bool disposing)
         {
             if (_disposed) return;
 
             if (disposing)
             {
+                IEnumerable<Process> allProcessesInDir = [];
                 try
                 {
-                    EnsureAllChromeInstancesAreKilled();
+                    string browserDir = _browserExecutablePath[.._browserExecutablePath.LastIndexOf(SC)];
+                    allProcessesInDir = Process.GetProcesses().Where(proc =>
+                        proc.MainModule != null && proc.MainModule.FileName.StartsWith(browserDir));
                 }
-                catch { }
+                catch (Exception e)
+                {
+                    LogRed("Failed to get processes. Web-driver processes will not disposed", e);
+                }
+
+                foreach (var proc in allProcessesInDir)
+                {
+                    try { proc.Kill(); }
+                    catch (Exception e) { LogRed($"(Warning) Failed to kill process | PID: \"{proc.Id}\"", e); }
+                }
 
                 try
                 {
@@ -419,10 +429,15 @@ namespace CharacterAI.Client
 
                 try
                 {
+                    _browser.CloseAsync().Wait();
+                    _page.CloseAsync().Wait();
+
                     lock (_heavyRequestsQueue)
                         _heavyRequestsQueue.Clear();
 
+                    _page = null!;
                     _browser = null!;
+                    _browserDirectory = null!;
                     _browserExecutablePath = null!;
                 }
                 catch { }
@@ -433,7 +448,7 @@ namespace CharacterAI.Client
         #endregion
     }
 
-    public static class Ext
+    public static class CharacterAiClientExtenstion
     {
         public static string GetExeName(this IBrowser browser)
             => browser.Process.MainModule!.FileName;

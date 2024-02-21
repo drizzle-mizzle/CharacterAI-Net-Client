@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <DebugType>embedded</DebugType>
+        <IsPackable>true</IsPackable>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <PackageId>
+            CharacterAI-NET-API-Wrapper
+        </PackageId>
+        <Version>
+            1.0.1
+        </Version>
+        <Authors>
+            drizzle-mizzle
+        </Authors>
+        <Product>
+            CharacterAI-NET-API-Wrapper
+        </Product>
+        <PackageTags>
+            CharacterAI;AI
+        </PackageTags>
+        <AssemblyName>CharacterAiNetApiWrapper</AssemblyName>
+        <RootNamespace>CharacterAiNetApiWrapper</RootNamespace>
+    </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PuppeteerRestClient" Version="1.0.0" />
+  </ItemGroup>
+
+</Project>
