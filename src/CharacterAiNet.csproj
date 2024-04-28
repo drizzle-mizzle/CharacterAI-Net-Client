@@ -23,12 +23,21 @@
         <PackageTags>
             CharacterAI;AI
         </PackageTags>
-        <AssemblyName>CharacterAiNetApiWrapper</AssemblyName>
-        <RootNamespace>CharacterAiNetApiWrapper</RootNamespace>
+        <AssemblyName>CharacterAiNet</AssemblyName>
+        <RootNamespace>CharacterAiNet</RootNamespace>
     </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NLog" Version="5.2.8" />
+    <PackageReference Include="NLog.Extensions.Logging" Version="5.3.8" />
     <PackageReference Include="PuppeteerRestClient" Version="1.0.0" />
+    <PackageReference Include="Websocket.Client" Version="5.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="nlog.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

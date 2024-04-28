@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34330.188
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CharacterAiNetApiWrapper", "src\CharacterAiNetApiWrapper.csproj", "{B94BFC62-C726-4B0E-9C55-7412ADC867E9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CharacterAiNet", "src\CharacterAiNet.csproj", "{B94BFC62-C726-4B0E-9C55-7412ADC867E9}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CharacterAiNet.Test", "test\CharacterAiNet.Test.csproj", "{4082BA7D-A53A-4D94-A1FF-71F864EC6E91}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{B94BFC62-C726-4B0E-9C55-7412ADC867E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B94BFC62-C726-4B0E-9C55-7412ADC867E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B94BFC62-C726-4B0E-9C55-7412ADC867E9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4082BA7D-A53A-4D94-A1FF-71F864EC6E91}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4082BA7D-A53A-4D94-A1FF-71F864EC6E91}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4082BA7D-A53A-4D94-A1FF-71F864EC6E91}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4082BA7D-A53A-4D94-A1FF-71F864EC6E91}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
