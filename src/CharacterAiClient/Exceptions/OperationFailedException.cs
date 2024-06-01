@@ -1,4 +1,4 @@
-﻿namespace CharacterAiNet.Exceptions
+﻿namespace CharacterAi.Exceptions
 {
     internal class OperationFailedException : Exception
     {

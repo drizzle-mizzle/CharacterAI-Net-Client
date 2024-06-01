@@ -1,6 +1,6 @@
-﻿namespace CharacterAiNet.Models.WS
+﻿namespace CharacterAi.Models.WS
 {
-    internal class Turn
+    public class Turn
     {
         public string primary_candidate_id { get; set; }
         public Author author { get; set; }
@@ -12,20 +12,20 @@
         public string state { get; set; }
     }
 
-    internal class Author
+    public class Author
     {
         public string author_id { get; set; }
         public bool is_human { get; set; }
         public string name { get; set; }
     }
 
-    internal class TurnKey
+    public class TurnKey
     {
         public string chat_id { get; set; }
         public string turn_id { get; set; }
     }
 
-    internal class Candidates
+    public class Candidates
     {
         public string candidate_id { get; set; }
         public string raw_content { get; set; }

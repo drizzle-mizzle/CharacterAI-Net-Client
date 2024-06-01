@@ -1,10 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <DebugType>embedded</DebugType>
         <IsPackable>true</IsPackable>
+        <RootNamespace>CharacterAi</RootNamespace>
+        <TargetFramework>netstandard2.1</TargetFramework>
+        <LangVersion>12</LangVersion>
     </PropertyGroup>
 
     <PropertyGroup>
@@ -23,15 +25,15 @@
         <PackageTags>
             CharacterAI;AI
         </PackageTags>
-        <AssemblyName>CharacterAiNet</AssemblyName>
-        <RootNamespace>CharacterAiNet</RootNamespace>
     </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NLog" Version="5.2.8" />
-    <PackageReference Include="NLog.Extensions.Logging" Version="5.3.8" />
-    <PackageReference Include="PuppeteerRestClient" Version="1.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="NLog" Version="5.3.2" />
+    <PackageReference Include="NLog.Extensions.Logging" Version="5.3.11" />
+    <PackageReference Include="RestSharp" Version="111.2.0" />
     <PackageReference Include="Websocket.Client" Version="5.1.1" />
+    <PackageReference Include="WebSocketSharp" Version="1.0.3-rc11" />
   </ItemGroup>
 
   <ItemGroup>

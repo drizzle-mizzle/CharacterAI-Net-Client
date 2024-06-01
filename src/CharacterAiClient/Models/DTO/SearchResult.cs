@@ -1,4 +1,4 @@
-﻿namespace CharacterAiNet.Models.DTO
+﻿namespace CharacterAi.Models.DTO
 {
     public class SearchResult
     {

@@ -1,6 +1,6 @@
-﻿using CharacterAiNet.Models.DTO;
+﻿using CharacterAi.Models.DTO;
 
-namespace CharacterAiNet.Models.HTTP
+namespace CharacterAi.Models.HTTP
 {
     internal class RecentResponse
     {

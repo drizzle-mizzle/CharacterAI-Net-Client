@@ -1,4 +1,4 @@
-﻿namespace CharacterAiNet.Models.HTTP
+﻿namespace CharacterAi.Models.HTTP
 {
     internal class InfoResponse
     {

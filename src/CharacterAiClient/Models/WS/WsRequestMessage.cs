@@ -1,16 +1,16 @@
-﻿using CharacterAiNet.Models.DTO;
+﻿using CharacterAi.Models.DTO;
 
-namespace CharacterAiNet.Models.WS
+namespace CharacterAi.Models.WS
 {
-    internal class WsRequestMessage
+    public class WsRequestMessage
     {
         public string command { get; set; }
         public string origin_id { get; set; }
-        public string request_id { get; set; }
+        public Guid request_id { get; set; }
         public IPayload payload { get; set; }
     }
 
-    internal class CallPayload : IPayload
+    public class CallPayload : IPayload
     {
         public string character_id { get; set; }
         public int num_candidates { get; set; }
@@ -21,7 +21,7 @@ namespace CharacterAiNet.Models.WS
         public PreviousAnnotations previous_annotations { get; set; }
     }
 
-    internal class NewChatPayload : IPayload
+    public class NewChatPayload : IPayload
     {
         public ChatShort chat { get; set; }
         public bool with_greeting { get; set; }
@@ -30,7 +30,7 @@ namespace CharacterAiNet.Models.WS
     public interface IPayload { }
 
 
-    internal class PreviousAnnotations
+    public class PreviousAnnotations
     {
         public int bad_memory { get; set; } = 0;
         public int boring { get; set; } = 0;
