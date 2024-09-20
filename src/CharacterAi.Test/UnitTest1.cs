@@ -1,3 +1,5 @@
+using CharacterAi.Client;
+
 namespace CharacterAi.Test;
 
 

@@ -1,4 +1,4 @@
-﻿namespace CharacterAi.Models.Common
+﻿namespace CharacterAi.Client.Models.Common
 {
     public class CaiChat
     {

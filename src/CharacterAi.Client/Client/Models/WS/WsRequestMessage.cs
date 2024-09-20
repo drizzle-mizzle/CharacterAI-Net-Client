@@ -1,6 +1,6 @@
-﻿using CharacterAi.Models.Common;
+﻿using CharacterAi.Client.Models.Common;
 
-namespace CharacterAi.Models.WS
+namespace CharacterAi.Client.Models.WS
 {
     public class WsRequestMessage
     {

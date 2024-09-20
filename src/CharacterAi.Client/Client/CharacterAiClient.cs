@@ -3,15 +3,15 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.RegularExpressions;
-using CharacterAi.Exceptions;
-using CharacterAi.Models;
-using CharacterAi.Models.Common;
-using CharacterAi.Models.WS;
+using CharacterAi.Client.Exceptions;
+using CharacterAi.Client.Models;
+using CharacterAi.Client.Models.Common;
+using CharacterAi.Client.Models.WS;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Websocket.Client;
 
-namespace CharacterAi
+namespace CharacterAi.Client
 {
     public class CharacterAiClient : IDisposable
     {

@@ -1,4 +1,4 @@
-﻿namespace CharacterAi.Models.WS
+﻿namespace CharacterAi.Client.Models.WS
 {
     public class Turn
     {

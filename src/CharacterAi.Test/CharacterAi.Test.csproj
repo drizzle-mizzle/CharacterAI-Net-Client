@@ -8,6 +8,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>CharacterAi.Test</RootNamespace>
+    <AssemblyName>CharacterAi.Test</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CharacterAiClient\CharacterAiClient.csproj" />
+    <ProjectReference Include="..\CharacterAi.Client\CharacterAi.Client.csproj" />
   </ItemGroup>
 
   <ItemGroup>

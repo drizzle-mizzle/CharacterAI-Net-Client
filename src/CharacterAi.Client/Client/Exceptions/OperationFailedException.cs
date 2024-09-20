@@ -1,4 +1,4 @@
-﻿namespace CharacterAi.Exceptions
+﻿namespace CharacterAi.Client.Exceptions
 {
     public class OperationFailedException : Exception
     {

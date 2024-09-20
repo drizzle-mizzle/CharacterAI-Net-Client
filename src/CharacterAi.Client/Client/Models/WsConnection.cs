@@ -1,7 +1,7 @@
-﻿using CharacterAi.Models.WS;
+﻿using CharacterAi.Client.Models.WS;
 using Websocket.Client;
 
-namespace CharacterAi.Models
+namespace CharacterAi.Client.Models
 {
     public class WsConnection
     {
