@@ -1,12 +1,10 @@
-﻿using CharacterAi.Models.DTO;
+﻿using CharacterAi.Models.Common;
 
 namespace CharacterAi.Models.WS
 {
     public class WsRequestMessage
     {
         public string command { get; set; }
-        public string origin_id { get; set; }
-        public Guid request_id { get; set; }
         public IPayload payload { get; set; }
     }
 
@@ -23,7 +21,7 @@ namespace CharacterAi.Models.WS
 
     public class NewChatPayload : IPayload
     {
-        public ChatShort chat { get; set; }
+        public CaiChatShort chat { get; set; }
         public bool with_greeting { get; set; }
     }
 

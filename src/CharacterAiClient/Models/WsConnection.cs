@@ -10,7 +10,8 @@ namespace CharacterAi.Models
         /// <summary>
         /// request_id : message
         /// </summary>
-        public Dictionary<Guid, WsResponseMessage> Messages { get; set; } = [];
+        public WsResponseMessage? LastMessage { get; set; }
+
         public void Send(string message)
             => Client.Send(message);
     }

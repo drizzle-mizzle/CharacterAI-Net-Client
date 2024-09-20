@@ -1,55 +1,55 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using System.Net.WebSockets;
-using System.Text.Json;
-using System.Text.Json.Nodes;
+using System.Text;
+using System.Text.RegularExpressions;
 using CharacterAi.Exceptions;
 using CharacterAi.Models;
-using CharacterAi.Models.DTO;
-using CharacterAi.Models.HTTP;
+using CharacterAi.Models.Common;
 using CharacterAi.Models.WS;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using NLog;
-using RestSharp;
 using Websocket.Client;
-using Logger = NLog.Logger;
 
 namespace CharacterAi
 {
     public class CharacterAiClient : IDisposable
     {
-        internal RestClient BaseCaiClient { get; }
-        internal RestClient NeoCaiClient { get; }
+        private const int RefreshTimeout = 60_000; // minute
+
+        internal HttpClient HttpClient { get; set; }
 
         /// <summary>
         /// authToken : client
         /// </summary>
         internal Dictionary<string, WsConnection> WsConnections { get; } = [];
-        internal string Cookie { get; set; } = null!;
-        internal bool Init { get; set; } = false;
 
-        private static readonly Logger _log = LogManager.GetCurrentClassLogger();
+        private readonly Stopwatch _sw = Stopwatch.StartNew();
 
-        private Stopwatch _sw;
 
         public CharacterAiClient()
         {
-            BaseCaiClient = new RestClient("https://character.ai");
-            NeoCaiClient = new RestClient("https://neo.character.ai");
-            
-            _sw = Stopwatch.StartNew();
+            HttpClient = new HttpClient();
+            HttpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            HttpClient.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate, br, zstd");
         }
 
-        const int refreshTimeout = 60_000; // minute
-        protected internal async Task RefreshAsync()
-        {
-            if (Init && _sw.ElapsedMilliseconds < refreshTimeout) return;
 
-            await this.InitializeAsync();
+        public void Refresh()
+        {
+            if (_sw.ElapsedMilliseconds < RefreshTimeout)
+            {
+                return;
+            }
+
+            lock (HttpClient)
+            {
+                this.InitializeAsync().Wait();
+            }
 
             _sw.Restart();
         }
+
 
         #region Dispose
 
@@ -57,14 +57,15 @@ namespace CharacterAi
 
         protected virtual void Dispose(bool disposing)
         {
-            if (!_disposedValue)
+            if (_disposedValue)
             {
-                BaseCaiClient.Dispose();
-                BaseCaiClient.Dispose();
-                _sw = null!;
-
-                _disposedValue = true;
+                return;
             }
+
+            HttpClient.Dispose();
+            WsConnections.Clear();
+
+            _disposedValue = true;
         }
 
         public void Dispose()
@@ -77,110 +78,212 @@ namespace CharacterAi
 
     public static class CharacterAiClientExt
     {
-        private static readonly Logger _log = LogManager.GetCurrentClassLogger();
+        // private static readonly Logger _log = LogManager.GetCurrentClassLogger();
 
-        public static async Task InitializeAsync(this CharacterAiClient client)
+        public static async Task InitializeAsync(this CharacterAiClient characterAiClient)
         {
-            var request = new RestRequest("/", Method.Get);
-
-            var response1 = await client.BaseCaiClient.ExecuteAsync(request);
-            client.Cookie = string.Join(';', response1.Cookies!.Cast<Cookie>().Select(c => $"{c.Name}={c.Value}"));
-
-            client.Init = true;
+            var response = await characterAiClient.HttpClient.GetAsync("https://character.ai/");
+            string cookie = string.Join(';', response.Headers.Where(h => h.Key.ToLower() == "set-cookie").Select(h => h.Value));
+            characterAiClient.HttpClient.DefaultRequestHeaders.Remove("Cookie");
+            characterAiClient.HttpClient.DefaultRequestHeaders.Add("Cookie", cookie);
         }
 
-        public static async Task<int?> GetUserIdAsync(this CharacterAiClient client, string authToken, string webNextAuthToken)
+        /// <returns>signInAttemptId - not really needed, but you can have it</returns>
+        public static async Task SendLoginEmailAsync(this CharacterAiClient characterAiClient, string email)
         {
-            await client.RefreshAsync();
+            characterAiClient.Refresh();
 
-            var request = new RestRequest($"/_next/data/qlSaBr0Gn7DVPbtemuE7m/index.json", Method.Get);
+            var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://character.ai/api/trpc/auth.login?batch=1")
+            {
+                Content = new StringContent("{\"0\":{\"json\":{\"email\": \"" + email + "\", \"host\":\"https://character.ai\"}}}", Encoding.UTF8, "application/json")
+            };
 
-            request.AddBasicHeaders();
-            request.AddOrUpdateHeader("Authorization", authToken.FixToken());
-            request.AddOrUpdateHeader("Cookie", client.Cookie);
-            request.AddOrUpdateHeader("X-Nextjs-Data", "1");
-            var response = await client.BaseCaiClient.ExecuteAsync(request);
-            var jObject = response.Content?.Deserialize<JObject>();
-            var userId = jObject?["pageProps"]?["user"]?["user"]?["id"]
-                ?? throw new OperationFailedException("Failed to get user account info. Make sure you have specified a correct web-next-auth token.");
+            var response = await characterAiClient.HttpClient.SendAsync(requestMessage);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new OperationFailedException($"Failed to send login link to email {email} | Details: {response.HumanizeHttpResponseError()}");
+            }
 
-            return (int)userId;
-        }
-
-        public static async Task<Character> GetCharacterInfoAsync(this CharacterAiClient client, string characterId, string authToken)
-        {
-            await client.RefreshAsync();
-
-            var request = new RestRequest("/chat/character/info/", Method.Post);
-
-            request.AddBasicHeaders();
-            request.AddOrUpdateHeader("Authorization", authToken.FixToken());
-            request.AddOrUpdateHeader("Cookie", client.Cookie);
-            
-            request.AddJsonBody($"{{ \"external_id\": \"{characterId}\" }}");
-
-            var response = await client.BaseCaiClient.ExecuteAsync(request);
-            var infoResponse = response.Content?.Deserialize<InfoResponse>()!;
-
-            return infoResponse.character;
-        }
-
-        public static async Task<List<SearchResult>> SearchAsync(this CharacterAiClient client, string query, string authToken)
-        {
-            await client.RefreshAsync();
-
-            var request = new RestRequest($"/api/trpc/search.search", Method.Get);
-
-            request.AddBasicHeaders();
-            request.AddOrUpdateHeader("Authorization", authToken.FixToken());
-            request.AddOrUpdateHeader("Cookie", client.Cookie);
-
-            request.AddQueryParameter("batch", "1");
-            request.AddQueryParameter("input", $"{{\"0\":{{\"json\":{{\"searchQuery\":\"{query}\"}}}}}}");
-
-            var response = await client.BaseCaiClient.ExecuteAsync(request);
-            var result = response.Content?.Deserialize<JsonArray>()?.FirstOrDefault();
-
-            var searchResponse = result?.Deserialize<SearchResponse>()!;
-
-            return searchResponse?.result?.data?.json ?? [];
-        }
-
-        public static async Task<List<Chat>> GetChatsAsync(this CharacterAiClient client, string characterId, string authToken)
-        {
-            await client.RefreshAsync();
-
-            var request = new RestRequest($"/chats/recent/{characterId}", Method.Get);
-
-            request.AddBasicHeaders();
-            request.AddOrUpdateHeader("Authorization", authToken.FixToken());
-            request.AddOrUpdateHeader("Cookie", client.Cookie);
-            
-            var response = await client.NeoCaiClient.ExecuteAsync(request);
-            var result = response.Content?.Deserialize<RecentResponse>();
-
-            return result?.chats ?? [];
+            // var content = await response.Content.ReadAsStringAsync();
+            // var jContent = JsonConvert.DeserializeObject<JArray>(content);
+            //
+            // var signInAttemptId = jContent?.First?["result"]?["data"]?["json"]?.ToString();
+            // if (signInAttemptId is null)
+            // {
+            //     throw new OperationFailedException($"Failed to send login link to email {email} | Details: {response.HumanizeHttpResponseError()}");
+            // }
         }
 
 
-        public static async Task<bool> PingAsync(this CharacterAiClient client)
+        public static async Task<AuthorizedUser> LoginByLinkAsync(this CharacterAiClient characterAiClient, string link)
         {
-            var request = new RestRequest("/ping", Method.Get);
-            var response = await client.NeoCaiClient.ExecuteAsync(request);
-            var status = response.Content?.Deserialize<JsonObject>()?["status"]?.GetValue<string>();
+            int attempt = 0;
 
-            return status?.Equals("OK") ?? false;
+            while (true)
+            {
+                characterAiClient.Refresh();
+                attempt++;
+
+                var response = await characterAiClient.HttpClient.GetAsync(link);
+                if (response.StatusCode is HttpStatusCode.InternalServerError && attempt < 5)
+                {
+                    await Task.Delay(3000);
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new OperationFailedException($"Failed to login with link {link} | Details: {response.HumanizeHttpResponseError()}");
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                content = content[content.IndexOf("https://auth", StringComparison.Ordinal)..];
+                content = Regex.Replace(content, "\"]\\)<\\/script><script>self\\.__next_f\\.push\\(\\[\\d,\"", string.Empty);
+                content = content[..(content.IndexOf("\",", StringComparison.Ordinal) - 1)];
+
+                var parts = content.Split(["oobCode=", "\\u0026apiKey=", "\\u0026"], StringSplitOptions.RemoveEmptyEntries);
+                string oobCode = parts[1];
+                string apiKey = parts[2];
+                string email = parts[3].Split(["email%3D", "%26"], StringSplitOptions.RemoveEmptyEntries)[1];
+
+                for (int i = 0; i < 5; i++)
+                {
+                    email = Uri.UnescapeDataString(email);
+                    if (email.Contains('@'))
+                    {
+                        break;
+                    }
+                }
+
+                var authCode = link.Split('/').Last();
+
+                return await FollowUpAuthAsync(characterAiClient, email, apiKey, oobCode, authCode);
+            }
         }
 
-        public static async Task<Guid> CreateNewChatAsync(this CharacterAiClient client, string characterId, int creatorId, string authToken)
-        {
-            Guid requestId = Guid.NewGuid();
 
-            var chat = new ChatShort()
+        private static async Task<AuthorizedUser> FollowUpAuthAsync(CharacterAiClient characterAiClient, string email, string apiKey, string oobCode, string authCode)
+        {
+            var postRequestMessage = new HttpRequestMessage(HttpMethod.Post, $"https://identitytoolkit.googleapis.com/v1/accounts:signInWithEmailLink?key={apiKey}")
+            {
+                Content = new StringContent($"{{\"email\":\"{email}\",\"oobCode\":\"{oobCode}\"}}", Encoding.UTF8, "application/json")
+            };
+
+            var postResponse = await characterAiClient.HttpClient.SendAsync(postRequestMessage);
+            if (!postResponse.IsSuccessStatusCode)
+            {
+                throw new OperationFailedException($"Failed to login with link | Details: {postResponse.HumanizeHttpResponseError()}");
+            }
+
+            string postContent = await postResponse.Content.ReadAsStringAsync();
+            var jPostContent = JsonConvert.DeserializeObject<JObject>(postContent)!;
+
+            var getRequestMessage = new HttpRequestMessage(HttpMethod.Get, $"https://character.ai/login/jwt?googleJwt={jPostContent["idToken"]}&uuid={authCode}&open_mobile=false");
+            getRequestMessage.Headers.TryAddWithoutValidation("Accept", "application/json");
+            getRequestMessage.Headers.TryAddWithoutValidation("X-Nextjs-data", "1");
+
+            var getResponse = await characterAiClient.HttpClient.SendAsync(getRequestMessage);
+            if (!getResponse.IsSuccessStatusCode)
+            {
+                throw new OperationFailedException($"Failed to login with link | Details: {getResponse.HumanizeHttpResponseError()}");
+            }
+
+            string getContent = await getResponse.Content.ReadAsStringAsync();
+            var jGetContent = JsonConvert.DeserializeObject<JObject>(getContent)!["pageProps"];
+            var userInfo = jGetContent!["user"]!["user"];
+
+            var authorizedUser = new AuthorizedUser
+            {
+                Token = jGetContent["token"]!.ToString(),
+                UserId = userInfo!["id"]!.ToString(),
+                Username = userInfo["username"]!.ToString(),
+                UserEmail = jGetContent!["user"]!["email"]!.ToString(),
+                UserImageUrl = userInfo["account"]!["avatar_file_name"]?.ToString()
+            };
+
+            return authorizedUser;
+        }
+
+        public static async Task<CaiCharacter> GetCharacterInfoAsync(this CharacterAiClient characterAiClient, string characterId, string? authToken = null)
+        {
+            characterAiClient.Refresh();
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://plus.character.ai/chat/character/info/")
+            {
+                Content = new StringContent($"{{\"external_id\":\"{characterId}\"}}", Encoding.UTF8, "application/json")
+            };
+
+            if (!string.IsNullOrEmpty(authToken))
+            {
+                requestMessage.Headers.Add("Authorization", $"Token {authToken}");
+            }
+
+            var response = await characterAiClient.HttpClient.SendAsync(requestMessage);
+            var content = await response.Content.ReadAsStringAsync();
+            var character = JsonConvert.DeserializeObject<JObject>(content)?["character"]?.ToString();
+
+            if (character is null)
+            {
+                throw new OperationFailedException($"Failed to get character info | Details: {response.HumanizeHttpResponseError()}");
+            }
+
+            return JsonConvert.DeserializeObject<CaiCharacter>(character)!;
+        }
+
+        public static async Task<List<SearchResult>> SearchAsync(this CharacterAiClient client, string query, string? authToken = null)
+        {
+            client.Refresh();
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Get, $"https://character.ai/api/trpc/search.search?batch=1&input={{\"0\":{{\"json\":{{\"searchQuery\":\"{query}\"}}}}}}");
+
+            if (!string.IsNullOrEmpty(authToken))
+            {
+                requestMessage.Headers.Add("Authorization", $"Token {authToken}");
+            }
+
+            var response = await client.HttpClient.SendAsync(requestMessage);
+            var content = await response.Content.ReadAsStringAsync();
+
+            var result = JsonConvert.DeserializeObject<JArray>(content)?.FirstOrDefault()?.ToString()!;
+            var json = JsonConvert.DeserializeObject<JObject>(result)?["result"]?["data"]?["json"]?.ToString();
+
+            if (json is null)
+            {
+                throw new OperationFailedException($"Failed to perform search request | Details: {response.HumanizeHttpResponseError()}");
+            }
+
+            return JsonConvert.DeserializeObject<List<SearchResult>>(json)!;
+        }
+
+        public static async Task<List<CaiChat>> GetChatsAsync(this CharacterAiClient client, string characterId, string authToken)
+        {
+            client.Refresh();
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Get, $"https://neo.character.ai/chats/recent/{characterId}");
+            requestMessage.Headers.Add("Authorization", $"Token {authToken}");
+
+            var response = await client.HttpClient.SendAsync(requestMessage);
+            var content = await response.Content.ReadAsStringAsync();
+            var jContent = JsonConvert.DeserializeObject<JObject>(content);
+            var chats = jContent["chats"] as JArray;
+            if (chats is null)
+            {
+                throw new OperationFailedException($"Failed to get chats | Details: {response.HumanizeHttpResponseError()}");
+            }
+
+            var caiChats = chats.Select(token => token.ToObject<CaiChat>());
+
+            return caiChats.ToList();
+        }
+
+
+        public static async Task<Guid> CreateNewChatAsync(this CharacterAiClient client, string characterId, int userId, string authToken)
+        {
+            var chat = new CaiChatShort()
             {
                 character_id = characterId,
                 chat_id = Guid.NewGuid(),
-                creator_id = creatorId.ToString(),
+                creator_id = userId.ToString(),
                 type = "TYPE_ONE_ON_ONE",
                 visibility = "VISIBILITY_PRIVATE"
             };
@@ -194,27 +297,22 @@ namespace CharacterAi
             var message = new WsRequestMessage()
             {
                 command = "create_chat",
-                origin_id = "web-next",
-                request_id = requestId,
                 payload = payload
             };
 
             var wsConnection = client.GetWsConnection(authToken);
-            wsConnection.Send(JsonConvert.SerializeObject(message));
+            var wsMessage = JsonConvert.SerializeObject(message);
+            wsConnection.LastMessage = null;
+            wsConnection.Send(wsMessage);
 
             for (int i = 0; i < 10; i++)
             {
-                wsConnection.Messages.TryGetValue(requestId, out WsResponseMessage? responseMessage);
-                if (responseMessage is null)
+                if (wsConnection.LastMessage is not null)
                 {
-                    await Task.Delay(1000);
-                    continue;
+                    return wsConnection.LastMessage.chat!.chat_id;
                 }
 
-                Guid chatId = responseMessage.chat!.chat_id;
-                wsConnection.Messages.Remove(requestId);
-
-                return chatId;
+                await Task.Delay(1000);
             }
 
             throw new OperationFailedException("Timed out");
@@ -225,32 +323,29 @@ namespace CharacterAi
 
         private static WsConnection GetWsConnection(this CharacterAiClient client, string authToken)
         {
-            WsConnection? connection;
-            client.WsConnections.TryGetValue(authToken, out connection);
-            if (connection is not null) return connection;
+            client.WsConnections.TryGetValue(authToken, out var connection);
+            if (connection is not null)
+            {
+                return connection;
+            }
 
             lock (client.WsConnections)
             {
-                connection = new WsConnection();
-                connection.Client = new WebsocketClient(new Uri("wss://neo.character.ai/ws/"), () =>
+                connection = new WsConnection
                 {
-                    var client = new ClientWebSocket();
-                    client.Options.SetRequestHeader("Cookie", $"HTTP_AUTHORIZATION=\"{authToken}\"");
+                    Client = new WebsocketClient(new Uri("wss://neo.character.ai/ws/"), () =>
+                    {
+                        var wsClient = new ClientWebSocket();
+                        wsClient.Options.SetRequestHeader("Cookie", $"HTTP_AUTHORIZATION=\"Token {authToken}\"");
 
-                    return client;
-                });
+                        return wsClient;
+                    })
+                };
 
                 connection.Client.MessageReceived.Subscribe(msg =>
                 {
-                    try
-                    {
-                        var wsResponseMessage = JsonConvert.DeserializeObject<WsResponseMessage>(msg.Text!)!;
-                        connection.Messages.Add(wsResponseMessage.request_id, wsResponseMessage);
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error($"Failed to receive WS message: {ex}");
-                    }
+                    var wsResponseMessage = JsonConvert.DeserializeObject<WsResponseMessage>(msg.Text!)!;
+                    connection.LastMessage = wsResponseMessage;
                 });
 
                 connection.Client.Start().Wait();
@@ -261,21 +356,21 @@ namespace CharacterAi
             }
         }
 
-
-        private static string FixToken(this string token)
+        private static string HumanizeHttpResponseError(this HttpResponseMessage? response)
         {
-            token = token.Trim();
-            return token.StartsWith("Token") ? token : $"Token {token}";
-        }
+            string details;
+            if (response is null)
+            {
+                details = "Failed to get response from CharacterAI";
+            }
+            else
+            {
+                details = $"{response.StatusCode:D} ({response.StatusCode:G})";
+                details += $"\nHeaders: {(response.Headers is null || response.Headers.Any() ? "\n" + string.Join("\n", response.Headers!.Select(h => $"[ '{h.Key}'='{h.Value}' ]")) : "none")}";
+                details += $"\nContent: {(string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result) ? "none" : response.Content)}";
+            }
 
-
-        private static void AddBasicHeaders(this RestRequest request)
-        {
-            request.AddOrUpdateHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7");
-            request.AddOrUpdateHeader("Accept-Language", "en-US,en;q=0.5"); 
-            request.AddOrUpdateHeader("Accept-Encoding", "gzip, deflate, br, zstd");  
-            request.AddOrUpdateHeader("Content-Type", "application/json");
-            request.AddOrUpdateHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            return details;
         }
 
         private static T? Deserialize<T>(this string json)

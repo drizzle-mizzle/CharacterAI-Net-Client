@@ -1,6 +1,6 @@
-﻿namespace CharacterAi.Models.DTO
+﻿namespace CharacterAi.Models.Common
 {
-    public class Character
+    public class CaiCharacter
     {
         public string? avatar_file_name { get; set; }
         public string? base_img_prompt { get; set; }

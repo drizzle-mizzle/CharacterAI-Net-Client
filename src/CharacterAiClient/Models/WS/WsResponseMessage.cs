@@ -1,4 +1,4 @@
-﻿using CharacterAi.Models.DTO;
+﻿using CharacterAi.Models.Common;
 
 namespace CharacterAi.Models.WS
 {
@@ -9,7 +9,7 @@ namespace CharacterAi.Models.WS
         public Turn? turn { get; set; }
 
         public ChatInfo? chat_info { get; set; }
-        public Chat? chat { get; set; }
+        public CaiChat? chat { get; set; }
     }
 
     public class ChatInfo
