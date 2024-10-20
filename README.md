@@ -8,6 +8,4 @@ An unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service 
 </div>
 
 ## 📓 Documentation
-- [Getting started](https://github.com/drizzle-mizzle/CharacterAI.Net/wiki/Getting-started)
-- [How to use](https://github.com/drizzle-mizzle/CharacterAI.Net/wiki/How-to-use)
-- [Methods](https://github.com/drizzle-mizzle/CharacterAI.Net/wiki/Methods)
+-
