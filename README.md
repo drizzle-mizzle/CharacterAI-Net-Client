@@ -1,5 +1,5 @@
 # CharacterAI.Net
-An unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service based on [PuppeteerSharp](https://github.com/hardkoded/puppeteer-sharp) and [PuppeteerExtraSharp](https://github.com/Overmiind/Puppeteer-sharp-extra)
+An unofficial .NET API wrapper for [CharacterAI](https://character.ai/)
 
 <div align="center">
 
@@ -8,4 +8,4 @@ An unofficial .NET API wrapper for [CharacterAI](https://character.ai/) service 
 </div>
 
 ## 📓 Documentation
--
+- 
