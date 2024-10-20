@@ -21,7 +21,6 @@
   
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-    <PackageReference Include="RestSharp" Version="111.2.0" />
     <PackageReference Include="Websocket.Client" Version="5.1.1" />
     <PackageReference Include="WebSocketSharp" Version="1.0.3-rc11" />
   </ItemGroup>
