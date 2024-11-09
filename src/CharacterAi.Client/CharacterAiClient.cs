@@ -147,9 +147,9 @@ namespace CharacterAi.Client
             }
 
             var signInContent = await signInResponse.Content.ReadAsStringAsync();
-            var jSignInConent = JsonConvert.DeserializeObject<JObject>(signInContent)!;
+            var jSignInContent = JsonConvert.DeserializeObject<JObject>(signInContent);
 
-            var loginRequest = new HttpRequestMessage(HttpMethod.Get, $"https://character.ai/login/jwt?googleJwt={jSignInConent["idToken"]}&uuid={authCode}&open_mobile=false");
+            var loginRequest = new HttpRequestMessage(HttpMethod.Get, $"https://character.ai/login/jwt?googleJwt={jSignInContent?["idToken"]}&uuid={authCode}&open_mobile=false");
 
             var loginResponse = await HTTP_CLIENT.SendAsync(loginRequest);
             if (!loginResponse.IsSuccessStatusCode)
@@ -166,16 +166,16 @@ namespace CharacterAi.Client
 
             var authResponse = await HTTP_CLIENT.SendAsync(authRequest);
             var content = await authResponse.Content.ReadAsStringAsync();
-            var jContent = JsonConvert.DeserializeObject<JObject>(content)!["pageProps"];
-            var userInfo = jContent!["user"]!["user"];
+            var jContent = JsonConvert.DeserializeObject<JObject>(content)["pageProps"];
+            var userInfo = jContent["user"]["user"];
 
             var authorizedUser = new AuthorizedUser
             {
-                Token = jContent["token"]!.ToString(),
-                UserId = userInfo!["id"]!.ToString(),
-                Username = userInfo["username"]!.ToString(),
-                UserEmail = jContent!["user"]!["email"]!.ToString(),
-                UserImageUrl = $"https://characterai.io/i/200/static/avatars/{userInfo["account"]!["avatar_file_name"]}"
+                Token = jContent["token"].ToString(),
+                UserId = userInfo["id"].ToString(),
+                Username = userInfo["username"].ToString(),
+                UserEmail = jContent["user"]["email"].ToString(),
+                UserImageUrl = $"https://characterai.io/i/200/static/avatars/{userInfo["account"]["avatar_file_name"]}"
             };
 
             return authorizedUser;
@@ -204,7 +204,7 @@ namespace CharacterAi.Client
                 throw new CharacterAiException($"Failed to get character info", (int)response.StatusCode, HumanizeHttpResponseError(response));
             }
 
-            return JsonConvert.DeserializeObject<CaiCharacter>(character)!;
+            return JsonConvert.DeserializeObject<CaiCharacter>(character);
         }
 
         public async Task<List<CaiCharacter>> SearchAsync(string query, string? authToken = null)
@@ -221,7 +221,7 @@ namespace CharacterAi.Client
             var response = await HTTP_CLIENT.SendAsync(requestMessage);
             var content = await response.Content.ReadAsStringAsync();
 
-            var result = JsonConvert.DeserializeObject<JArray>(content)?.FirstOrDefault()?.ToString()!;
+            var result = JsonConvert.DeserializeObject<JArray>(content)?.FirstOrDefault()?.ToString();
             var json = JsonConvert.DeserializeObject<JObject>(result)?["result"]?["data"]?["json"]?.ToString();
 
             if (json is null)
@@ -229,7 +229,7 @@ namespace CharacterAi.Client
                 throw new CharacterAiException($"Failed to perform search request", (int)response.StatusCode, HumanizeHttpResponseError(response));
             }
 
-            return JsonConvert.DeserializeObject<List<CaiCharacter>>(json)!;
+            return JsonConvert.DeserializeObject<List<CaiCharacter>>(json);
         }
 
         public async Task<List<CaiChat>> GetChatsAsync(string characterId, string authToken)
@@ -254,45 +254,130 @@ namespace CharacterAi.Client
         }
 
 
-        public async Task<Guid> CreateNewChatAsync(string characterId, int userId, string authToken)
+        /// <returns>Chat ID</returns>
+        /// <exception cref="CharacterAiException"></exception>
+        public string CreateNewChat(string characterId, string userId, string authToken)
         {
-            var chat = new CaiChatShort()
-            {
-                character_id = characterId,
-                chat_id = Guid.NewGuid(),
-                creator_id = userId.ToString(),
-                type = "TYPE_ONE_ON_ONE",
-                visibility = "VISIBILITY_PRIVATE"
-            };
-
-            var payload = new NewChatPayload()
-            {
-                with_greeting = true,
-                chat = chat
-            };
-
-            var message = new WsRequestMessage()
-            {
-                command = "create_chat",
-                payload = payload
-            };
-
             var wsConnection = GetWsConnection(authToken);
-            var wsMessage = JsonConvert.SerializeObject(message);
-            wsConnection.LastMessage = null;
-            wsConnection.Send(wsMessage);
-
-            for (var i = 0; i < 10; i++)
+            lock (wsConnection)
             {
-                if (wsConnection.LastMessage is not null)
+                wsConnection.Messages.Clear();
+
+                var chat = new CaiChatShort()
                 {
-                    return wsConnection.LastMessage.chat!.chat_id;
+                    character_id = characterId,
+                    chat_id = Guid.NewGuid(),
+                    creator_id = userId,
+                    type = "TYPE_ONE_ON_ONE",
+                    visibility = "VISIBILITY_PRIVATE"
+                };
+
+                var payload = new NewChatPayload()
+                {
+                    with_greeting = true,
+                    chat = chat
+                };
+
+                var wsRequestMessage = new WsRequestMessage()
+                {
+                    command = "create_chat",
+                    payload = payload
+                };
+
+                wsConnection.Send(JsonConvert.SerializeObject(wsRequestMessage));
+
+                // Wait for response 30 seconds
+                for (var i = 0; i < 30; i++)
+                {
+                    var wsResponseMessage = wsConnection.Messages.FirstOrDefault(msg => msg.command == "create_chat_response");
+                    if (wsResponseMessage is null)
+                    {
+                        Task.Delay(1000).Wait();
+                        continue;
+                    }
+
+                    var chatId = wsResponseMessage.chat!.chat_id;
+                    wsConnection.Messages.Clear();
+
+                    return chatId.ToString();
                 }
 
-                await Task.Delay(1000);
+                throw new CharacterAiException("Timed out", 0, "?");
             }
+        }
 
-            throw new CharacterAiException("Timed out", 0, "?");
+
+        /// <returns>Character response</returns>
+        /// <exception cref="CharacterAiException"></exception>
+        public string SendMessageToChat(CaiSendMessageInputData data)
+        {
+            var wsConnection = GetWsConnection(data.UserAuthToken);
+
+            lock (wsConnection)
+            {
+                wsConnection.Messages.Clear();
+
+                var candidateId = Guid.NewGuid().ToString();
+                var payload = new CallPayload
+                {
+                    character_id = data.CharacterId,
+                    num_candidates = 1, // TODO: figure out what is this
+                    tts_enabled = false,
+                    turn = new Turn
+                    {
+                        author = new Author
+                        {
+                            author_id = data.UserId,
+                            is_human = true,
+                            name = data.Username
+                        },
+                        candidates = [new Candidate
+                        {
+                            candidate_id = candidateId,
+                            raw_content = data.Message
+                        }],
+                        primary_candidate_id = candidateId,
+                        turn_key = new TurnKey
+                        {
+                            chat_id = data.ChatId,
+                            turn_id = Guid.NewGuid().ToString()
+                        }
+                    },
+                    user_name = data.Username
+                };
+
+                var wsRequestMessage = new WsRequestMessage()
+                {
+                    command = "create_and_generate_turn",
+                    payload = payload
+                };
+
+                wsConnection.Send(JsonConvert.SerializeObject(wsRequestMessage));
+
+                // Wait for response 60 seconds
+                for (var i = 0; i < 30; i++)
+                {
+                    Task.Delay(2000).Wait();
+                    if (wsConnection.Messages.Any(msg => msg.command == "filter_user_input"))
+                    {
+                        wsConnection.Messages.Clear();
+                        throw new CaiUserInputFilteredException();
+                    }
+
+                    var lastUpdateMessage = wsConnection.Messages.LastOrDefault(msg => msg.command == "update_turn" && msg.turn?.candidates.First().is_final == true);
+                    if (lastUpdateMessage is null)
+                    {
+                        continue;
+                    }
+
+                    var responseText = lastUpdateMessage.turn!.candidates.First().raw_content;
+                    wsConnection.Messages.Clear();
+
+                    return responseText;
+                }
+
+                throw new CharacterAiException("Timed out", 0, "?"); // filter_user_input
+            }
         }
 
 
@@ -300,14 +385,13 @@ namespace CharacterAi.Client
 
         private WsConnection GetWsConnection(string authToken)
         {
-            WsConnections.TryGetValue(authToken, out var connection);
-            if (connection is not null)
-            {
-                return connection;
-            }
-
             lock (WsConnections)
             {
+                if (WsConnections.TryGetValue(authToken, out var connection))
+                {
+                    return connection;
+                }
+
                 connection = new WsConnection
                 {
                     Client = new WebsocketClient(new Uri("wss://neo.character.ai/ws/"), () =>
@@ -321,38 +405,31 @@ namespace CharacterAi.Client
 
                 connection.Client.MessageReceived.Subscribe(msg =>
                 {
-                    var wsResponseMessage = JsonConvert.DeserializeObject<WsResponseMessage>(msg.Text!)!;
-                    connection.LastMessage = wsResponseMessage;
+                    var wsResponseMessage = JsonConvert.DeserializeObject<WsResponseMessage>(msg.Text);
+                    connection.Messages.Add(wsResponseMessage);
                 });
 
-                connection.Client.Start().Wait();
-
+                connection.Client.Start();
                 WsConnections.Add(authToken, connection);
 
                 return connection;
             }
         }
 
+
         private static string HumanizeHttpResponseError(HttpResponseMessage? response)
         {
-            string details;
+            var responseDetails = "Response: ";
             if (response is null)
             {
-                details = "Failed to get response from SakuraFM";
+                return $"{responseDetails}Failed to get response from SakuraFM";
             }
             else
             {
-                details = $"{response.StatusCode:D} ({response.StatusCode:G})\nHeaders: ";
+                responseDetails += $"{response.StatusCode:D} ({response.StatusCode:G})\nHeaders: ";
 
                 var headers = response.Headers.ToList();
-                if (response.Headers is null || headers.Count == 0)
-                {
-                    details += "none";
-                }
-                else
-                {
-                    details += string.Join("\n", headers.Select(h => $"[ '{h.Key}'='{h.Value}' ]"));
-                }
+                responseDetails += headers.Count == 0 ? "none" : string.Join("\n", headers.Select(h => $"[ '{h.Key}'='{h.Value}' ]"));
 
                 var content = Task.Run(async () => await response.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
                 if (string.IsNullOrEmpty(content))
@@ -360,10 +437,34 @@ namespace CharacterAi.Client
                     content = "none";
                 }
 
-                details += $"\nContent: {content}";
+                responseDetails += $"\nContent: {content}";
             }
 
-            return details;
+            var request = response.RequestMessage;
+            var requestDetails = "Request: ";
+
+            if (request is null)
+            {
+                requestDetails += "???";
+            }
+            else
+            {
+                requestDetails += $"{request.Method.Method} {request.RequestUri.AbsoluteUri}\nHeaders: ";
+
+                var headers = request.Headers.ToList();
+                responseDetails += headers.Count == 0 ? "none" : string.Join("\n", headers.Select(h => $"[ '{h.Key}'='{h.Value}' ]"));
+
+                var content = Task.Run(async () => await request.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
+                if (string.IsNullOrEmpty(content))
+                {
+                    content = "none";
+                }
+
+                requestDetails += $"\nContent: {content}";
+            }
+
+
+            return $"{responseDetails}\n{requestDetails}";
         }
 
 

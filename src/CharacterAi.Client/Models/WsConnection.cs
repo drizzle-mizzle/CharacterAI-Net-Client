@@ -10,7 +10,7 @@ namespace CharacterAi.Client.Models
         /// <summary>
         /// request_id : message
         /// </summary>
-        public WsResponseMessage? LastMessage { get; set; }
+        public List<WsResponseMessage> Messages { get; } = [];
 
         public void Send(string message)
             => Client.Send(message);
