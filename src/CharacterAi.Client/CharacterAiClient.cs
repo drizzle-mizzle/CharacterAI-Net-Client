@@ -302,7 +302,10 @@ namespace CharacterAi.Client
                     return chatId.ToString();
                 }
 
-                throw new CharacterAiException("Timed out", 0, "?");
+                var messages = string.Join("; ", wsConnection.Messages.Select(JsonConvert.SerializeObject));
+                wsConnection.Messages.Clear();
+
+                throw new CharacterAiException($"CreateNewChat - Timed out", 0, messages);
             }
         }
 
@@ -360,11 +363,23 @@ namespace CharacterAi.Client
                     Task.Delay(2000).Wait();
                     if (wsConnection.Messages.Any(msg => msg.command == "filter_user_input"))
                     {
+                        var messages = wsConnection.GetAllMessagesFormatted();
                         wsConnection.Messages.Clear();
-                        throw new CaiUserInputFilteredException();
+
+                        throw new CharacterAiException("filter_user_input", 0, string.Join("; ", messages));
                     }
 
-                    var lastUpdateMessage = wsConnection.Messages.LastOrDefault(msg => msg.command == "update_turn" && msg.turn?.candidates.First().is_final == true);
+                    var neoError = wsConnection.Messages.FirstOrDefault(msg => msg.command == "neo_error");
+                    if (neoError is not null)
+                    {
+                        var messages = wsConnection.GetAllMessagesFormatted();
+                        wsConnection.Messages.Clear();
+
+                        throw new CharacterAiException($"{neoError.command}: {neoError.comment ?? "?"}", 0, messages);
+                    }
+
+                    var lastUpdateMessage = wsConnection.Messages.LastOrDefault(msg => msg.command == "update_turn"
+                                                                                    && (msg.turn?.candidates.Any(c => c.is_final) ?? false));
                     if (lastUpdateMessage is null)
                     {
                         continue;
@@ -376,7 +391,10 @@ namespace CharacterAi.Client
                     return responseText;
                 }
 
-                throw new CharacterAiException("Timed out", 0, "?"); // filter_user_input
+                var _messages = wsConnection.GetAllMessagesFormatted();
+                wsConnection.Messages.Clear();
+
+                throw new CharacterAiException("SendMessageToChat - Timed out", 0, _messages);
             }
         }
 
@@ -405,7 +423,7 @@ namespace CharacterAi.Client
 
                 connection.Client.MessageReceived.Subscribe(msg =>
                 {
-                    var wsResponseMessage = JsonConvert.DeserializeObject<WsResponseMessage>(msg.Text);
+                    var wsResponseMessage = JsonConvert.DeserializeObject<WsResponseMessage>(msg.Text); // {"command": "neo_error", "request_id": null, "comment": "Self harm message detected", "error_code": 400, "sub_code": 101}
                     connection.Messages.Add(wsResponseMessage);
                 });
 
