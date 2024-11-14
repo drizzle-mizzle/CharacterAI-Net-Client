@@ -96,14 +96,14 @@ namespace CharacterAi.Client
                 attempt++;
 
                 var response = await HTTP_CLIENT.GetAsync(link);
-                if (response.StatusCode is HttpStatusCode.InternalServerError && attempt < 5)
-                {
-                    await Task.Delay(3000);
-                    continue;
-                }
-
                 if (!response.IsSuccessStatusCode)
                 {
+                    if (attempt < 5)
+                    {
+                        await Task.Delay(3000);
+                        continue;
+                    }
+
                     throw new CharacterAiException($"Failed to login with link {link}", (int)response.StatusCode, HumanizeHttpResponseError(response));
                 }
 
