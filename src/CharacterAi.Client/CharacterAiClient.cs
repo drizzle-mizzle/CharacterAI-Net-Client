@@ -104,26 +104,36 @@ namespace CharacterAi.Client
                         continue;
                     }
 
-                    throw new CharacterAiException($"Failed to login with link {link}", (int)response.StatusCode, HumanizeHttpResponseError(response));
+                    throw new CharacterAiException($"Failed to login with link", (int)response.StatusCode, HumanizeHttpResponseError(response));
                 }
 
-                var content = await response.Content.ReadAsStringAsync();
-                content = content[content.IndexOf("https://auth", StringComparison.Ordinal)..];
-                content = Regex.Replace(content, "\"]\\)<\\/script><script>self\\.__next_f\\.push\\(\\[\\d,\"", string.Empty);
-                content = content[..(content.IndexOf("\",", StringComparison.Ordinal) - 1)];
-
-                var parts = content.Split(["oobCode=", "\\u0026apiKey=", "\\u0026"], StringSplitOptions.RemoveEmptyEntries);
-                var oobCode = parts[1];
-                var apiKey = parts[2];
-                var email = parts[3].Split(["email%3D", "%26"], StringSplitOptions.RemoveEmptyEntries)[1];
-
-                for (var i = 0; i < 5; i++)
+                string oobCode;
+                string apiKey;
+                string email;
+                try
                 {
-                    email = Uri.UnescapeDataString(email);
-                    if (email.Contains('@'))
+                    var content = await response.Content.ReadAsStringAsync();
+                    content = content[content.IndexOf("https://auth", StringComparison.Ordinal)..];
+                    content = Regex.Replace(content, "\"]\\)<\\/script><script>self\\.__next_f\\.push\\(\\[\\d,\"", string.Empty);
+                    content = content[..(content.IndexOf("\",", StringComparison.Ordinal) - 1)];
+
+                    var parts = content.Split(["oobCode=", "\\u0026apiKey=", "\\u0026"], StringSplitOptions.RemoveEmptyEntries);
+                    oobCode = parts[1];
+                    apiKey = parts[2];
+                    email = parts[3].Split(["email%3D", "%26"], StringSplitOptions.RemoveEmptyEntries)[1];
+
+                    for (var i = 0; i < 5; i++)
                     {
-                        break;
+                        email = Uri.UnescapeDataString(email);
+                        if (email.Contains('@'))
+                        {
+                            break;
+                        }
                     }
+                }
+                catch (Exception e)
+                {
+                    throw new CharacterAiException("Failed to parse response", (int)response.StatusCode, HumanizeHttpResponseError(response, e));
                 }
 
                 var authCode = link.Split('/').Last();
@@ -435,12 +445,18 @@ namespace CharacterAi.Client
         }
 
 
-        private static string HumanizeHttpResponseError(HttpResponseMessage? response)
+        private static string HumanizeHttpResponseError(HttpResponseMessage? response, Exception? e = null)
         {
+            string? exceptionDetails = null;
+            if (e is not null)
+            {
+                exceptionDetails = $"Exception:\n{e}\n";
+            }
+
             var responseDetails = "Response: ";
             if (response is null)
             {
-                return $"{responseDetails}Failed to get response from CharacterAI";
+                return $"{exceptionDetails}{responseDetails}Failed to get response from CharacterAI";
             }
 
             responseDetails += $"{response.StatusCode:D} ({response.StatusCode:G})\nHeaders: ";
@@ -479,7 +495,7 @@ namespace CharacterAi.Client
             }
 
 
-            return $"{responseDetails}\n{requestDetails}";
+            return $"{exceptionDetails}{responseDetails}\n{requestDetails}";
         }
 
 
