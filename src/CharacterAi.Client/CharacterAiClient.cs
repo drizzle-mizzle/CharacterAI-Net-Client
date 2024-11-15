@@ -201,7 +201,7 @@ namespace CharacterAi.Client
 
             if (character is null)
             {
-                throw new CharacterAiException($"Failed to get character info", (int)response.StatusCode, HumanizeHttpResponseError(response));
+                throw new CharacterAiException("Failed to get character info", (int)response.StatusCode, HumanizeHttpResponseError(response));
             }
 
             return JsonConvert.DeserializeObject<CaiCharacter>(character);
@@ -440,23 +440,20 @@ namespace CharacterAi.Client
             var responseDetails = "Response: ";
             if (response is null)
             {
-                return $"{responseDetails}Failed to get response from SakuraFM";
+                return $"{responseDetails}Failed to get response from CharacterAI";
             }
-            else
+
+            responseDetails += $"{response.StatusCode:D} ({response.StatusCode:G})\nHeaders: ";
+            var resposneHeaders = response.Headers.ToList();
+            responseDetails += resposneHeaders.Count == 0 ? "none" : string.Join("\n", resposneHeaders.Select(h => $"[ '{h.Key}'='{h.Value}' ]"));
+
+            var responseContent = Task.Run(async () => await response.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
+            if (string.IsNullOrEmpty(responseContent))
             {
-                responseDetails += $"{response.StatusCode:D} ({response.StatusCode:G})\nHeaders: ";
-
-                var headers = response.Headers.ToList();
-                responseDetails += headers.Count == 0 ? "none" : string.Join("\n", headers.Select(h => $"[ '{h.Key}'='{h.Value}' ]"));
-
-                var content = Task.Run(async () => await response.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
-                if (string.IsNullOrEmpty(content))
-                {
-                    content = "none";
-                }
-
-                responseDetails += $"\nContent: {content}";
+                responseContent = "none";
             }
+
+            responseDetails += $"\nContent: {responseContent}";
 
             var request = response.RequestMessage;
             var requestDetails = "Request: ";
@@ -469,16 +466,16 @@ namespace CharacterAi.Client
             {
                 requestDetails += $"{request.Method.Method} {request.RequestUri.AbsoluteUri}\nHeaders: ";
 
-                var headers = request.Headers.ToList();
-                responseDetails += headers.Count == 0 ? "none" : string.Join("\n", headers.Select(h => $"[ '{h.Key}'='{h.Value}' ]"));
+                var requestHeaders = request.Headers.ToList();
+                responseDetails += requestHeaders.Count == 0 ? "none" : string.Join("\n", requestHeaders.Select(h => $"[ '{h.Key}'='{h.Value}' ]"));
 
-                var content = Task.Run(async () => await request.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
-                if (string.IsNullOrEmpty(content))
+                var requestContent = Task.Run(async () => await request.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
+                if (string.IsNullOrEmpty(requestContent))
                 {
-                    content = "none";
+                    requestContent = "none";
                 }
 
-                requestDetails += $"\nContent: {content}";
+                requestDetails += $"\nContent: {requestContent}";
             }
 
 
