@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -25,7 +26,7 @@ namespace CharacterAi.Client
         /// <summary>
         /// authToken : client
         /// </summary>
-        private Dictionary<string, WsConnection> WsConnections { get; } = [];
+        private ConcurrentDictionary<string, WsConnection> WsConnections { get; } = [];
 
         private bool _init = false;
 
@@ -413,35 +414,35 @@ namespace CharacterAi.Client
 
         private WsConnection GetWsConnection(string authToken)
         {
-            lock (WsConnections)
+            if (WsConnections.TryGetValue(authToken, out var connection))
             {
-                if (WsConnections.TryGetValue(authToken, out var connection))
-                {
-                    return connection;
-                }
-
-                connection = new WsConnection
-                {
-                    Client = new WebsocketClient(new Uri("wss://neo.character.ai/ws/"), () =>
-                    {
-                        var wsClient = new ClientWebSocket();
-                        wsClient.Options.SetRequestHeader("Cookie", $"HTTP_AUTHORIZATION=\"Token {authToken}\"");
-
-                        return wsClient;
-                    })
-                };
-
-                connection.Client.MessageReceived.Subscribe(msg =>
-                {
-                    var wsResponseMessage = JsonConvert.DeserializeObject<WsResponseMessage>(msg.Text); // {"command": "neo_error", "request_id": null, "comment": "Self harm message detected", "error_code": 400, "sub_code": 101}
-                    connection.Messages.Add(wsResponseMessage);
-                });
-
-                connection.Client.Start();
-                WsConnections.Add(authToken, connection);
-
                 return connection;
             }
+
+            var newConnection = new WsConnection
+            {
+                Client = new WebsocketClient(new Uri("wss://neo.character.ai/ws/"), () =>
+                {
+                    var wsClient = new ClientWebSocket();
+                    wsClient.Options.SetRequestHeader("Cookie", $"HTTP_AUTHORIZATION=\"Token {authToken}\"");
+
+                    return wsClient;
+                })
+            };
+
+            if (WsConnections.TryAdd(authToken, newConnection))
+            {
+                newConnection.Client.MessageReceived.Subscribe(msg =>
+                {
+                    var wsResponseMessage = JsonConvert.DeserializeObject<WsResponseMessage>(msg.Text); // {"command": "neo_error", "request_id": null, "comment": "Self harm message detected", "error_code": 400, "sub_code": 101}
+                    newConnection.Messages.Add(wsResponseMessage);
+                });
+
+                newConnection.Client.Start();
+                return newConnection;
+            }
+
+            return GetWsConnection(authToken);
         }
 
 
