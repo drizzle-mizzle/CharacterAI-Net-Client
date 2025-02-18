@@ -233,14 +233,14 @@ namespace CharacterAi.Client
             var content = await response.Content.ReadAsStringAsync();
 
             var result = JsonConvert.DeserializeObject<JArray>(content)?.FirstOrDefault()?.ToString();
-            var json = JsonConvert.DeserializeObject<JObject>(result)?["result"]?["data"]?["json"]?.ToString();
+            var characters = JsonConvert.DeserializeObject<JObject>(result)?["result"]?["data"]?["json"]?["characters"]?.ToString();
 
-            if (json is null)
+            if (characters is null)
             {
                 throw new CharacterAiException($"Failed to perform search request", (int)response.StatusCode, HumanizeHttpResponseError(response));
             }
 
-            return JsonConvert.DeserializeObject<List<CaiCharacter>>(json);
+            return JsonConvert.DeserializeObject<List<CaiCharacter>>(characters);
         }
 
         public async Task<List<CaiChat>> GetChatsAsync(string characterId, string authToken)
