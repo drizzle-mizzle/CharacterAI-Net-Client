@@ -316,7 +316,7 @@ namespace CharacterAi.Client
                 var messages = string.Join("; ", wsConnection.Messages.Select(JsonConvert.SerializeObject));
                 wsConnection.Messages.Clear();
 
-                throw new CharacterAiException($"CreateNewChat - Timed out", 0, messages);
+                throw new CharacterAiException("CreateNewChat - Timed out", 0, messages);
             }
         }
 
