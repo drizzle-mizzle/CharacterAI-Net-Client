@@ -292,7 +292,8 @@ namespace CharacterAi.Client
                 var wsRequestMessage = new WsRequestMessage()
                 {
                     command = "create_chat",
-                    payload = payload
+                    payload = payload,
+                    origin_id = "web-next"
                 };
 
                 wsConnection.Send(JsonConvert.SerializeObject(wsRequestMessage));

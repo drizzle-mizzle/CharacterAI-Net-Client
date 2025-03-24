@@ -6,6 +6,7 @@ namespace CharacterAi.Client.Models.WS
     {
         public string command { get; set; }
         public IPayload payload { get; set; }
+        public string origin_id { get; set; }
     }
 
     public class CallPayload : IPayload
