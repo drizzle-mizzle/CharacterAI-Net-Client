@@ -1,4 +1,4 @@
-# CharacterAI.Net
+# [❌ Discontinued ] CharacterAI.Net
 An unofficial .NET API wrapper for [CharacterAI](https://character.ai/)
 
 <div align="center">
@@ -7,5 +7,3 @@ An unofficial .NET API wrapper for [CharacterAI](https://character.ai/)
 
 </div>
 
-## 📓 Documentation
-- 
